@@ -11,10 +11,11 @@ contract pass.
 
 from __future__ import annotations
 
+import hashlib
 import io
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from rooted_provenance.models import (
     ALG_TRUSTMARK_P,
@@ -40,7 +41,7 @@ async def _read_image(file: UploadFile) -> Image.Image:
     data = await file.read()
     try:
         return Image.open(io.BytesIO(data)).convert("RGB")
-    except Exception as exc:
+    except (UnidentifiedImageError, OSError) as exc:
         raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
 
 
@@ -56,15 +57,27 @@ async def ingest(
     watermark_id: str = Form(...),
     model: str = Form("unknown"),
 ) -> dict[str, str]:
-    image = await _read_image(file)
+    """Trusted generation-side ingest (authenticated in prod). Public surface is /matches/*.
+
+    The asset hash is computed from the uploaded bytes, never taken from the client, and an existing
+    manifest id is not overwritten.
+    """
+    resolver = get_resolver()
+    if resolver.get_manifest(manifest_id) is not None:
+        raise HTTPException(status_code=409, detail="manifest id already exists")
+    data = await file.read()
+    try:
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
     manifest = Manifest(
         manifest_id=manifest_id,
-        asset_sha256="0" * 64,
+        asset_sha256=hashlib.sha256(data).hexdigest(),
         created_at="2026-06-25T00:00:00Z",
         system_provenance={"model": model},
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
-    get_resolver().register(manifest, image, watermark_id)
+    resolver.register(manifest, image, watermark_id)
     return {"manifestId": manifest_id}
 
 

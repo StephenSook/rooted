@@ -78,3 +78,15 @@ def test_integrity_clash_rejected() -> None:
     resolver.register(m, img, watermark_id="RTBB")
     assert resolver.check_integrity(m.manifest_id, img) is True
     assert resolver.check_integrity(m.manifest_id, _img(654)) is False
+
+
+def test_watermark_clash_via_resolve_is_rejected() -> None:
+    # A watermark decodes to "WX" pointing to manifest A, but the queried asset is unrelated. The
+    # inline integrity check must reject it rather than return A (the integrity-clash defense).
+    index = InMemoryIndex()
+    resolver = Resolver(index, FakeWatermarker(decoded_id="WX"))
+    m_a, img_a = _manifest(6), _img(6)
+    resolver.register(m_a, img_a, watermark_id="WX")
+    assert resolver.resolve_by_content(_img(777)).matches == []
+    # the genuine asset still resolves
+    assert resolver.resolve_by_content(img_a).matches[0].manifest_id == m_a.manifest_id

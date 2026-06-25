@@ -31,6 +31,7 @@ class Index(Protocol):
     def manifest_for_watermark(self, watermark_id: str) -> str | None: ...
     def put_fingerprint(self, pdq_bits: str, manifest_id: str) -> None: ...
     def nearest_fingerprint(self, pdq_bits: str, threshold: int) -> tuple[str, int] | None: ...
+    def fingerprints_for(self, manifest_id: str) -> list[str]: ...
 
 
 @dataclass
@@ -64,6 +65,9 @@ class InMemoryIndex:
                 best = (manifest_id, dist)
         return best
 
+    def fingerprints_for(self, manifest_id: str) -> list[str]:
+        return [bits for bits, mid in self.fingerprints if mid == manifest_id]
+
 
 class Resolver:
     def __init__(self, index: Index, watermarker: Watermarker) -> None:
@@ -77,13 +81,20 @@ class Resolver:
         bits, _ = compute_pdq(image)
         self._index.put_fingerprint(bits, manifest.manifest_id)
 
+    def _fingerprint_matches(self, pdq_bits: str, manifest_id: str) -> bool:
+        return any(is_match(pdq_bits, fp) for fp in self._index.fingerprints_for(manifest_id))
+
     def resolve_by_content(self, image: Image.Image) -> SoftBindingQueryResult:
+        bits, _ = compute_pdq(image)
+        # Watermark first, but only if the queried asset actually fingerprint-matches the pointed-to
+        # manifest. This is the cross-layer integrity check applied inline: a watermark id that
+        # points to an unrelated manifest (the "integrity clash") is rejected, not returned.
         watermark_id, _conf = self._wm.decode(image)
         if watermark_id is not None:
             manifest_id = self._index.manifest_for_watermark(watermark_id)
-            if manifest_id is not None:
+            if manifest_id is not None and self._fingerprint_matches(bits, manifest_id):
                 return SoftBindingQueryResult(matches=[Match(manifest_id=manifest_id)])
-        bits, _ = compute_pdq(image)
+        # PDQ fallback (already a fingerprint match, so integrity holds by construction).
         hit = self._index.nearest_fingerprint(bits, PDQ_HAMMING_THRESHOLD)
         if hit is not None:
             manifest_id, dist = hit
@@ -106,7 +117,4 @@ class Resolver:
     def check_integrity(self, manifest_id: str, image: Image.Image) -> bool:
         """Cross-layer check: does the queried asset fingerprint-match the recovered manifest?"""
         bits, _ = compute_pdq(image)
-        for stored_bits, mid in getattr(self._index, "fingerprints", []):
-            if mid == manifest_id and is_match(bits, stored_bits):
-                return True
-        return False
+        return self._fingerprint_matches(bits, manifest_id)

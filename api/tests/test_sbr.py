@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 
 import httpx
@@ -59,6 +60,7 @@ async def test_get_manifest_is_redacted() -> None:
     body = r.json()
     assert body["system_provenance"]["model"] == "flux"
     assert body["personal_provenance"] == {}
+    assert body["asset_sha256"] == hashlib.sha256(data).hexdigest()
 
 
 async def test_unknown_manifest_404() -> None:

@@ -1,0 +1,64 @@
+# --- Secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+service-account*.json
+.npmrc
+.pypirc
+
+# --- Local working material (strategy, private framework, third-party content) ---
+# research/ holds strategy PDFs, the private methodology, the nk.studio crawl, and the idea
+# writeup. None of it belongs in a public repo (internal-process + third-party content rules).
+research/
+
+# --- Claude Code local ---
+.claude/settings.local.json
+.claude/worktrees/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.python-version
+
+# --- Node / Next.js / Turborepo ---
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+.vercel/
+
+# --- Model weights / large binaries (use external hosting, not git) ---
+*.pt
+*.pth
+*.onnx
+*.safetensors
+trustmark_weights/
+
+# --- OS / IDE ---
+.DS_Store
+.AppleDouble
+._*
+.vscode/
+.idea/
+*.swp
+
+# --- Logs / temp ---
+*.log
+tmp/
+.cache/
+
+# DO commit lockfiles: uv.lock, pnpm-lock.yaml are tracked on purpose.

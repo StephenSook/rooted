@@ -30,6 +30,10 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.isort]
 known-first-party = ["rooted_api", "rooted_storage", "rooted_provenance"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI idiom: File/Form/Depends/Query are evaluated as argument defaults by design.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Depends", "fastapi.Query"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["api/tests", "packages/storage/tests", "packages/provenance/tests"]

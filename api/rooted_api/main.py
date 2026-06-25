@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from rooted_api.sbr import router as sbr_router
+
 app = FastAPI(title="Rooted SBR API", version="0.1.0")
+app.include_router(sbr_router)
 
 
 @app.get("/health")

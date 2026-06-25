@@ -39,6 +39,13 @@ def test_tampered_manifest_fails() -> None:
     assert verify_manifest(sig, tampered, pub) is False
 
 
+def test_malformed_input_returns_false_not_crash() -> None:
+    _, pub = generate_keypair()
+    m = _manifest()
+    for bad in [b"", b"\x00\x01\x02", b"garbage-not-cbor", b"\xff\xff"]:
+        assert verify_manifest(bad, m, pub) is False
+
+
 def test_wrong_key_fails() -> None:
     priv, _ = generate_keypair()
     _, other_pub = generate_keypair()

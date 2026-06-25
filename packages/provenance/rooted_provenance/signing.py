@@ -84,6 +84,8 @@ def verify_manifest(cose_bytes: bytes, manifest: Manifest, pub: Ed25519PublicKey
     """True iff the signature is valid AND covers this manifest's canonical payload."""
     try:
         payload = verify_cose_sign1(cose_bytes, pub)
-    except InvalidSignature:
+    except (InvalidSignature, cbor2.CBORDecodeError, ValueError, TypeError):
+        # bad signature, malformed CBOR (CBORDecodeError/EOF), or a non-bytes signature element.
+        # Adversary-controlled bytes must yield a clean False, never an uncaught 500.
         return False
     return payload == canonical_json(manifest.canonical_payload())

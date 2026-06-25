@@ -39,6 +39,13 @@ def test_object_lock_blocks_delete_and_overwrite() -> None:
         s.put("merkle/checkpoints/epoch_00000001.cbor", b"tampered", object_lock=True)
 
 
+def test_object_lock_requires_retain_days() -> None:
+    # Object Lock without a retention period is a silent no-op risk: the fake and the real B2
+    # backend must both refuse it so a checkpoint is never written deletable.
+    with pytest.raises(ValueError):
+        InMemoryStorage().put("k", b"x", object_lock=True)
+
+
 def test_missing_key_raises() -> None:
     with pytest.raises(KeyError):
         InMemoryStorage().get("nope")

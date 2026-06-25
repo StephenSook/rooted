@@ -8,12 +8,20 @@ can rewrite history without contradicting a checkpoint that physically cannot be
 from __future__ import annotations
 
 import base64
+import binascii
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from pymerkle import InmemoryTree, MerkleProof, verify_consistency, verify_inclusion
+from pymerkle import (
+    InmemoryTree,
+    InvalidProof,
+    MerkleProof,
+    verify_consistency,
+    verify_inclusion,
+)
 
 from .models import MerkleCheckpoint
 
@@ -48,7 +56,7 @@ class TransparencyLog:
         try:
             verify_inclusion(base, root, proof)
             return True
-        except Exception:
+        except InvalidProof:
             return False
 
     def prove_consistency(self, prior_size: int, size: int | None = None) -> MerkleProof:
@@ -60,7 +68,7 @@ class TransparencyLog:
         try:
             verify_consistency(prior_root, current_root, proof)
             return True
-        except Exception:
+        except InvalidProof:
             return False
 
     def checkpoint(self, epoch: int, priv: Ed25519PrivateKey, signed_at: str) -> MerkleCheckpoint:
@@ -81,5 +89,6 @@ def verify_checkpoint(cp: MerkleCheckpoint, pub: Ed25519PublicKey) -> bool:
     try:
         pub.verify(base64.b64decode(cp.signature_b64), head)
         return True
-    except Exception:
+    except (InvalidSignature, binascii.Error):
+        # bad signature or malformed base64; a None/non-str field is a wiring bug and should crash.
         return False

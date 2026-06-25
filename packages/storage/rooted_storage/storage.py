@@ -55,6 +55,8 @@ class InMemoryStorage:
     ) -> str:
         if key in self._locked:
             raise ObjectLockedError(f"{key} is under Object Lock and cannot be overwritten")
+        if object_lock and not retain_days:
+            raise ValueError("object_lock requires retain_days")
         self._data[key] = bytes(data)
         if object_lock:
             self._locked.add(key)
@@ -90,7 +92,9 @@ class B2Storage:
         self, key: str, data: bytes, *, object_lock: bool = False, retain_days: int | None = None
     ) -> str:
         kwargs: dict = {}
-        if object_lock and retain_days:
+        if object_lock:
+            if not retain_days:
+                raise ValueError("object_lock requires retain_days")
             from b2sdk.v2 import FileRetentionSetting, RetentionMode
 
             until_ms = int((time.time() + retain_days * 86400) * 1000)
@@ -104,10 +108,14 @@ class B2Storage:
         return buf.getvalue()
 
     def exists(self, key: str) -> bool:
+        from b2sdk.v2 import FileNotPresent
+
         try:
             self._bucket.get_file_info_by_name(key)
             return True
-        except Exception:
+        except FileNotPresent:
+            # Only "absent" returns False. Connection/auth errors propagate so an outage is never
+            # mistaken for a missing object (which would corrupt recovery and overwrite logic).
             return False
 
     def delete(self, key: str) -> None:

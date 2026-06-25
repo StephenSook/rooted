@@ -63,15 +63,25 @@ def sign_cose_sign1(payload: bytes, priv: Ed25519PrivateKey) -> bytes:
 
 
 def verify_cose_sign1(cose_bytes: bytes, pub: Ed25519PublicKey) -> bytes:
-    """Return the payload if the signature is valid; raise InvalidSignature otherwise."""
-    obj = cbor2.loads(cose_bytes)
+    """Return the payload if the signature is valid; raise InvalidSignature otherwise.
+
+    Every failure mode for adversary-controlled bytes (malformed CBOR, wrong structure, non-bytes
+    fields, a bad signature) collapses to InvalidSignature, so callers verify with a single narrow
+    except and a public endpoint never 500s on crafted input. Caller bugs still propagate.
+    """
+    try:
+        obj = cbor2.loads(cose_bytes)
+    except cbor2.CBORDecodeError as exc:
+        raise InvalidSignature("malformed CBOR") from exc
     seq = obj.value if isinstance(obj, cbor2.CBORTag) else obj
     arr = list(seq) if isinstance(seq, (list, tuple)) else []
     if len(arr) != 4:
         raise InvalidSignature("not a COSE_Sign1 structure")
     protected, _unprotected, payload, signature = arr
-    pub.verify(signature, _sig_structure(protected, payload))  # raises on mismatch
-    return payload
+    if not all(isinstance(x, (bytes, bytearray)) for x in (protected, payload, signature)):
+        raise InvalidSignature("COSE_Sign1 fields must be byte strings")
+    pub.verify(bytes(signature), _sig_structure(bytes(protected), bytes(payload)))
+    return bytes(payload)
 
 
 def sign_manifest(manifest: Manifest, priv: Ed25519PrivateKey) -> bytes:
@@ -84,8 +94,8 @@ def verify_manifest(cose_bytes: bytes, manifest: Manifest, pub: Ed25519PublicKey
     """True iff the signature is valid AND covers this manifest's canonical payload."""
     try:
         payload = verify_cose_sign1(cose_bytes, pub)
-    except (InvalidSignature, cbor2.CBORDecodeError, ValueError, TypeError):
-        # bad signature, malformed CBOR (CBORDecodeError/EOF), or a non-bytes signature element.
-        # Adversary-controlled bytes must yield a clean False, never an uncaught 500.
+    except InvalidSignature:
+        # verify_cose_sign1 already collapses malformed/adversarial input to InvalidSignature, so
+        # this narrow catch is sufficient and does not mask caller bugs.
         return False
     return payload == canonical_json(manifest.canonical_payload())

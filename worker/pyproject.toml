@@ -10,8 +10,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Genblaze pulls provider SDKs; kept optional. The pipeline is tested with a fake generator.
-genblaze = ["genblaze>=0.3"]
+# Genblaze pulls provider SDKs; kept optional. The pipeline is tested with a fake generator, and
+# GenblazeGenerator imports genblaze lazily so the worker installs and CI run without these.
+genblaze = [
+    "genblaze>=0.3",
+    "genblaze-gmicloud>=0.3",
+    "genblaze-openai>=0.3",
+    "httpx>=0.27",
+]
 
 [build-system]
 requires = ["hatchling"]

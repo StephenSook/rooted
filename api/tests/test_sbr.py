@@ -44,7 +44,7 @@ async def test_ingest_then_recover_by_content() -> None:
         assert ing.status_code == 200
         rec = await c.post("/matches/byContent", files={"file": ("a.png", data, "image/png")})
     assert rec.status_code == 200
-    assert rec.json()["matches"][0]["manifest_id"] == "urn:c2pa:demo"
+    assert rec.json()["matches"][0]["manifestId"] == "urn:c2pa:demo"
 
 
 async def test_get_manifest_is_redacted() -> None:
@@ -58,9 +58,9 @@ async def test_get_manifest_is_redacted() -> None:
         r = await c.get("/manifests/urn:c2pa:demo2")
     assert r.status_code == 200
     body = r.json()
-    assert body["system_provenance"]["model"] == "flux"
-    assert body["personal_provenance"] == {}
-    assert body["asset_sha256"] == hashlib.sha256(data).hexdigest()
+    assert body["systemProvenance"]["model"] == "flux"
+    assert body["personalProvenance"] == {}
+    assert body["assetSha256"] == hashlib.sha256(data).hexdigest()
 
 
 async def test_unknown_manifest_404() -> None:
@@ -89,5 +89,5 @@ async def test_get_manifest_enforces_redaction_of_real_personal_provenance() -> 
         r = await c.get("/manifests/urn:c2pa:pii")
     assert r.status_code == 200
     body = r.json()
-    assert body["system_provenance"]["model"] == "seedream"
-    assert body["personal_provenance"] == {}
+    assert body["systemProvenance"]["model"] == "seedream"
+    assert body["personalProvenance"] == {}

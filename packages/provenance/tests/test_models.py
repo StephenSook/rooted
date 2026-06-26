@@ -50,6 +50,6 @@ def test_changing_system_provenance_changes_hash() -> None:
 
 def test_supported_algorithms_excludes_pdq() -> None:
     algs = SupportedAlgorithms()
-    assert ALG_TRUSTMARK_P in algs.watermarks
-    joined = " ".join(algs.watermarks + algs.fingerprints).lower()
+    assert ALG_TRUSTMARK_P in [w.alg for w in algs.watermarks]
+    joined = " ".join(a.alg for a in algs.watermarks + algs.fingerprints).lower()
     assert "pdq" not in joined

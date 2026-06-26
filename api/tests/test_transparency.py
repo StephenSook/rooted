@@ -53,11 +53,11 @@ async def test_checkpoint_is_signed_and_verifies() -> None:
         r = await c.get("/transparency/checkpoint")
     assert r.status_code == 200
     body = r.json()
-    assert body["key_source"] == "ephemeral"
+    assert body["keySource"] == "ephemeral"
     cp = MerkleCheckpoint.model_validate(body["checkpoint"])
     assert cp.tree_size >= 1
     assert cp.epoch == cp.tree_size  # epoch is tied to tree state, not a request counter
-    pub = load_public_key(bytes.fromhex(body["public_key_hex"]))
+    pub = load_public_key(bytes.fromhex(body["publicKeyHex"]))
     assert verify_checkpoint(cp, pub) is True
 
 
@@ -68,9 +68,9 @@ async def test_checkpoint_get_is_idempotent() -> None:
         second = (await c.get("/transparency/checkpoint")).json()["checkpoint"]
     # No ingest between the two reads: the signed head must be identical (a GET must not mutate it).
     assert first["epoch"] == second["epoch"]
-    assert first["tree_size"] == second["tree_size"]
-    assert first["root_hash"] == second["root_hash"]
-    assert first["signature_b64"] == second["signature_b64"]
+    assert first["treeSize"] == second["treeSize"]
+    assert first["rootHash"] == second["rootHash"]
+    assert first["signatureB64"] == second["signatureB64"]
 
 
 async def test_inclusion_proof_is_independently_verifiable() -> None:
@@ -80,22 +80,22 @@ async def test_inclusion_proof_is_independently_verifiable() -> None:
         manifest_body = (await c.get("/manifests/urn:c2pa:tlog2")).json()
     assert r.status_code == 200
     body = r.json()
-    assert body["manifest_id"] == "urn:c2pa:tlog2"
-    assert body["leaf_index"] >= 1
-    assert body["server_verified"] is True
+    assert body["manifestId"] == "urn:c2pa:tlog2"
+    assert body["leafIndex"] >= 1
+    assert body["serverVerified"] is True
 
     # The proof is pinned to a signed checkpoint: its resolved root equals the signed root, and
     # that checkpoint verifies against the returned key. This is the independent (non-server) check.
     cp = MerkleCheckpoint.model_validate(body["checkpoint"])
-    pub = load_public_key(bytes.fromhex(body["public_key_hex"]))
+    pub = load_public_key(bytes.fromhex(body["publicKeyHex"]))
     assert verify_checkpoint(cp, pub) is True
     proof = MerkleProof.deserialize(body["proof"])
     assert proof.resolve() == bytes.fromhex(cp.root_hash)
-    assert body["root_hash"] == cp.root_hash
+    assert body["rootHash"] == cp.root_hash
 
     # The leaf is bound to the actual manifest: leaf_hash is the manifest's canonical hash, which
     # redaction leaves unchanged (personal provenance is excluded from canonical_payload).
-    assert body["leaf_hash"] == Manifest.model_validate(manifest_body).canonical_hash()
+    assert body["leafHash"] == Manifest.model_validate(manifest_body).canonical_hash()
 
 
 async def test_inclusion_proof_does_not_resolve_to_a_wrong_root() -> None:

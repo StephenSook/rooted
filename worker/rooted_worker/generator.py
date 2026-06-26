@@ -1,18 +1,24 @@
 """Generation step: Genblaze multi-provider, behind a Protocol with a deterministic fake for tests.
 
-The real Genblaze generator is a documented stub until provider keys land and the alpha SDK API can
-be verified live (Genblaze is v0.3.x and churny). The pipeline is exercised end to end with the
-fake, so the orchestration is proven and the real generator drops in at the seam.
+FakeGenerator is the network-free stand-in the pipeline tests use. GenblazeGenerator is the real
+multi-provider generator (GMICloud primary, OpenAI cross-provider fallback) used when the genblaze
+extra and provider keys are present. Asset bytes are read defensively: a file:// asset is bounded to
+the temp dir the provider writes to, and an https asset is fetched over https only, refusing
+internal addresses and redirects, with a size cap.
 """
 
 from __future__ import annotations
 
 import hashlib
 import io
+import ipaddress
 import logging
+import socket
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import unquote, urlparse
 
 import numpy as np
 from PIL import Image
@@ -48,18 +54,56 @@ class FakeGenerator:
         return GenerationResult(image, buf.getvalue(), self._model, self._provider)
 
 
-def _asset_bytes(url: str) -> bytes:
-    """Read a genblaze asset's bytes. OpenAI assets are a local file:// the provider already
-    downloaded; GMICloud assets are remote https URLs we fetch."""
-    if url.startswith("file://"):
-        from urllib.parse import unquote, urlparse
+_MAX_ASSET_BYTES = 50 * 1024 * 1024  # cap on a fetched/read genblaze asset
 
-        return Path(unquote(urlparse(url).path)).read_bytes()
+
+def _reject_internal_host(host: str | None) -> None:
+    """SSRF guard: refuse a host that resolves to a private, loopback, or reserved address."""
+    if not host:
+        raise ValueError("genblaze asset URL has no host")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError as exc:
+        raise ValueError(f"cannot resolve genblaze asset host {host!r}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError(f"refusing to fetch a genblaze asset from internal address {ip}")
+
+
+def _asset_bytes(url: str) -> bytes:
+    """Read a genblaze asset's bytes, failing closed on an untrusted URL.
+
+    OpenAI assets are a local file:// the provider already downloaded (bounded to the temp dir it
+    writes to); GMICloud assets are remote URLs fetched over https only, refusing internal
+    addresses (SSRF) and redirects, with a size cap. The asset URL comes from the provider
+    response, so this is defense in depth rather than a user-facing input path.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        path = Path(unquote(parsed.path)).resolve()
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+        if not path.is_relative_to(tmp_root):
+            raise ValueError(f"refusing to read a genblaze asset outside the temp dir: {path}")
+        data = path.read_bytes()
+        if len(data) > _MAX_ASSET_BYTES:
+            raise ValueError("genblaze asset exceeds the size cap")
+        return data
+    if parsed.scheme != "https":
+        raise ValueError(f"unsupported genblaze asset URL scheme: {parsed.scheme!r}")
+    _reject_internal_host(parsed.hostname)
     import httpx
 
-    resp = httpx.get(url, timeout=120.0, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.content
+    chunks: list[bytes] = []
+    total = 0
+    with httpx.stream("GET", url, timeout=120.0, follow_redirects=False) as resp:
+        resp.raise_for_status()
+        for chunk in resp.iter_bytes():
+            total += len(chunk)
+            if total > _MAX_ASSET_BYTES:
+                raise ValueError("genblaze asset exceeds the size cap")
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 class GenblazeGenerator:

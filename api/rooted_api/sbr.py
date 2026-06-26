@@ -32,14 +32,17 @@ from rooted_provenance.models import (
     SoftBindingQueryResult,
     SupportedAlgorithms,
 )
-from rooted_provenance.resolver import InMemoryIndex, Resolver
+from rooted_provenance.resolver import Index, InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, load_private_key, public_key_bytes
 from rooted_provenance.watermark import FakeWatermarker
 
 router = APIRouter()
 
-# Scaffold singleton. Real wiring: Resolver(PostgresIndex(...), TrustMarkWatermarker()).
-_resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+# The recovery resolver. It uses PostgresIndex when DATABASE_URL is set, so the live recovery path
+# runs on Postgres, and falls back to the in-memory index otherwise so the demo is credential-free.
+# Built lazily on first use and overridable for tests (set_resolver). The watermarker stays the fake
+# until TrustMark is wired; recovery uses the PDQ path either way.
+_resolver: Resolver | None = None
 
 # The transparency log the recovery server serves. /ingest appends each manifest's canonical hash
 # as a leaf; _leaf_index maps a manifest id to its 1-based leaf so an inclusion proof can be cut.
@@ -85,8 +88,41 @@ def _signed_head() -> MerkleCheckpoint:
     return _log.checkpoint(_log.size, _signing_key, datetime.now(UTC).isoformat())
 
 
+def _psycopg_url(url: str) -> str:
+    """Normalize a SQLAlchemy/async-style URL to the libpq form psycopg expects. DATABASE_URL is
+    written for the app's async driver (postgresql+asyncpg://); the sync index needs postgresql://."""
+    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql+psycopg2://"):
+        if url.startswith(prefix):
+            return "postgresql://" + url[len(prefix) :]
+    return url
+
+
+def _make_resolver() -> Resolver:
+    """Build the resolver. DATABASE_URL selects the Postgres index (live recovery on Postgres);
+    without it the in-memory index keeps the demo credential-free."""
+    url = os.environ.get("DATABASE_URL")
+    index: Index = InMemoryIndex()
+    if url:
+        from rooted_storage.index import PostgresIndex
+
+        pg = PostgresIndex(_psycopg_url(url))
+        pg.create_schema()
+        index = pg
+    return Resolver(index, FakeWatermarker())
+
+
 def get_resolver() -> Resolver:
+    global _resolver
+    if _resolver is None:
+        _resolver = _make_resolver()
     return _resolver
+
+
+def set_resolver(resolver: Resolver | None) -> None:
+    """Override the resolver, or reset to None to rebuild on next use. Tests use this to point the
+    live API at a Postgres-backed resolver."""
+    global _resolver
+    _resolver = resolver
 
 
 async def _read_image(file: UploadFile) -> Image.Image:

@@ -7,6 +7,7 @@ import io
 
 import httpx
 import numpy as np
+import pytest
 from httpx import ASGITransport
 from PIL import Image
 
@@ -91,3 +92,22 @@ async def test_get_manifest_enforces_redaction_of_real_personal_provenance() -> 
     body = r.json()
     assert body["systemProvenance"]["model"] == "seedream"
     assert body["personalProvenance"] == {}
+
+
+async def test_bycontent_rejects_decompression_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A tiny crafted image whose header declares huge dimensions must fail closed as 415, not crash
+    # the public endpoint with a 500. DecompressionBombError is not an OSError, so it needs a catch.
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 16)
+    data = _png(3)  # 256x256 = 65536 pixels, well over 2x the patched limit
+    async with _client() as c:
+        r = await c.post("/matches/byContent", files={"file": ("a.png", data, "image/png")})
+    assert r.status_code == 415
+
+
+async def test_bycontent_rejects_oversized_upload(monkeypatch: pytest.MonkeyPatch) -> None:
+    import rooted_api.sbr as sbr
+
+    monkeypatch.setattr(sbr, "_MAX_UPLOAD_BYTES", 8)
+    async with _client() as c:
+        r = await c.post("/matches/byContent", files={"file": ("a.png", _png(4), "image/png")})
+    assert r.status_code == 413

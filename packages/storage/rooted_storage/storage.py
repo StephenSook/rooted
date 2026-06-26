@@ -114,7 +114,7 @@ class B2Storage:
         return buf.getvalue()
 
     def exists(self, key: str) -> bool:
-        from b2sdk.v2 import FileNotPresent
+        from b2sdk.v2.exception import FileNotPresent
 
         try:
             self._bucket.get_file_info_by_name(key)

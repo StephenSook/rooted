@@ -8,6 +8,8 @@ run without the genblaze extra installed.
 from __future__ import annotations
 
 import io
+import os
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -31,11 +33,31 @@ def _result(model: str, provider: str) -> GenerationResult:
     )
 
 
-def test_asset_bytes_reads_file_url(tmp_path: Path) -> None:
+def test_asset_bytes_reads_file_url_in_tempdir() -> None:
     data = _png_bytes(1)
-    p = tmp_path / "a.png"
+    fd, name = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    p = Path(name)
     p.write_bytes(data)
-    assert _asset_bytes(f"file://{quote(str(p))}") == data
+    try:
+        assert _asset_bytes(f"file://{quote(str(p))}") == data
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_asset_bytes_rejects_file_outside_tempdir() -> None:
+    with pytest.raises(ValueError, match="outside the temp dir"):
+        _asset_bytes("file:///etc/hosts")
+
+
+def test_asset_bytes_rejects_non_https_scheme() -> None:
+    with pytest.raises(ValueError, match="unsupported"):
+        _asset_bytes("ftp://example.com/x.png")
+
+
+def test_asset_bytes_rejects_internal_host() -> None:
+    with pytest.raises(ValueError, match="internal address|cannot resolve"):
+        _asset_bytes("https://127.0.0.1/x.png")
 
 
 def test_generate_uses_gmi_when_it_succeeds() -> None:

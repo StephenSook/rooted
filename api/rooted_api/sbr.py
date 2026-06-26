@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -112,10 +113,19 @@ def _make_resolver() -> Resolver:
     return Resolver(index, FakeWatermarker())
 
 
+# Locks for the lazy singletons: routes run in a threadpool (run_in_threadpool), so two concurrent
+# first requests could otherwise both build a resolver/log (one pool then leaks). The startup
+# lifespan pre-builds both, so this is belt-and-suspenders for paths that skip the lifespan.
+_resolver_lock = threading.Lock()
+_log_lock = threading.Lock()
+
+
 def get_resolver() -> Resolver:
     global _resolver
     if _resolver is None:
-        _resolver = _make_resolver()
+        with _resolver_lock:
+            if _resolver is None:
+                _resolver = _make_resolver()
     return _resolver
 
 
@@ -140,7 +150,9 @@ def _make_log() -> TransparencyLog:
 def get_log() -> TransparencyLog:
     global _log
     if _log is None:
-        _log = _make_log()
+        with _log_lock:
+            if _log is None:
+                _log = _make_log()
     return _log
 
 

@@ -127,3 +127,9 @@ class Resolver:
         """Cross-layer check: does the queried asset fingerprint-match the recovered manifest?"""
         bits, _ = compute_pdq(image)
         return self._fingerprint_matches(bits, manifest_id)
+
+    def close(self) -> None:
+        """Release the index's resources (e.g. a Postgres pool); a no-op for the in-memory index."""
+        close = getattr(self._index, "close", None)
+        if callable(close):
+            close()

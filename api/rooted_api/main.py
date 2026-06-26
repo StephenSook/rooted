@@ -23,7 +23,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # request, so a misconfigured database fails the deploy loudly.
     get_resolver()
     get_log()
-    yield
+    try:
+        yield
+    finally:
+        # Close the connection pools on shutdown (a no-op for the in-memory backends).
+        get_resolver().close()
+        get_log().close()
 
 
 app = FastAPI(title="Rooted SBR API", version="0.1.0", lifespan=lifespan)

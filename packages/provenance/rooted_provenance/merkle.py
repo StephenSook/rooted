@@ -78,6 +78,12 @@ class TransparencyLog:
     def index_for(self, manifest_id: str) -> int | None:
         return self._index.get(manifest_id)
 
+    def close(self) -> None:
+        """Release the leaf store's resources (e.g. a Postgres pool); a no-op for in-memory."""
+        close = getattr(self._store, "close", None)
+        if callable(close):
+            close()
+
     @property
     def size(self) -> int:
         return self._tree.get_size()

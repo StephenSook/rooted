@@ -90,3 +90,18 @@ def test_watermark_clash_via_resolve_is_rejected() -> None:
     assert resolver.resolve_by_content(_img(777)).matches == []
     # the genuine asset still resolves
     assert resolver.resolve_by_content(img_a).matches[0].manifest_id == m_a.manifest_id
+
+
+def test_close_delegates_to_index_close() -> None:
+    closed: list[bool] = []
+
+    class _ClosableIndex(InMemoryIndex):
+        def close(self) -> None:
+            closed.append(True)
+
+    Resolver(_ClosableIndex(), FakeWatermarker()).close()
+    assert closed == [True]
+
+
+def test_close_is_noop_when_index_has_no_close() -> None:
+    Resolver(InMemoryIndex(), FakeWatermarker()).close()  # in-memory has no close; must not raise

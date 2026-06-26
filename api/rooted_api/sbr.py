@@ -45,12 +45,11 @@ router = APIRouter()
 # until TrustMark is wired; recovery uses the PDQ path either way.
 _resolver: Resolver | None = None
 
-# The transparency log the recovery server serves. /ingest appends each manifest's canonical hash
-# as a leaf; _leaf_index maps a manifest id to its 1-based leaf so an inclusion proof can be cut.
-# In production this is a persistent tree with signed checkpoints under B2 Object Lock; the
-# in-memory tree keeps the demo credential-free and swaps at the same seam as the resolver above.
-_log = TransparencyLog()
-_leaf_index: dict[str, int] = {}
+# The transparency log the recovery server serves. /ingest appends each manifest's canonical hash as
+# a leaf; the log owns the manifest-id -> leaf-index map. With DATABASE_URL it persists the ordered
+# leaves to Postgres and rebuilds the tree on startup, so proofs survive a restart; otherwise it is
+# the credential-free in-memory log. Built lazily and overridable for tests (set_log).
+_log: TransparencyLog | None = None
 
 
 def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
@@ -86,7 +85,8 @@ def _public_key_hex() -> str:
 def _signed_head() -> MerkleCheckpoint:
     """The signed tree head for the current log state. The epoch IS the tree size, so the same tree
     state always yields the same signed checkpoint (a GET is idempotent and reproducible)."""
-    return _log.checkpoint(_log.size, _signing_key, datetime.now(UTC).isoformat())
+    log = get_log()
+    return log.checkpoint(log.size, _signing_key, datetime.now(UTC).isoformat())
 
 
 def _psycopg_url(url: str) -> str:
@@ -124,6 +124,30 @@ def set_resolver(resolver: Resolver | None) -> None:
     live API at a Postgres-backed resolver."""
     global _resolver
     _resolver = resolver
+
+
+def _make_log() -> TransparencyLog:
+    """Build the transparency log. DATABASE_URL persists the ordered leaves to Postgres (so proofs
+    survive a restart and a second instance); without it the leaves live in memory."""
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        from rooted_storage.transparency import PostgresTransparencyStore
+
+        return TransparencyLog(PostgresTransparencyStore(_psycopg_url(url)))
+    return TransparencyLog()
+
+
+def get_log() -> TransparencyLog:
+    global _log
+    if _log is None:
+        _log = _make_log()
+    return _log
+
+
+def set_log(log: TransparencyLog | None) -> None:
+    """Override the transparency log, or reset to None to rebuild on next use (tests)."""
+    global _log
+    _log = log
 
 
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # cap on an uploaded asset
@@ -186,7 +210,7 @@ async def ingest(
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
     await run_in_threadpool(resolver.register, manifest, image, watermark_id)
-    _leaf_index[manifest_id] = _log.append(manifest.canonical_hash())
+    await run_in_threadpool(get_log().append, manifest_id, manifest.canonical_hash())
     return {"manifestId": manifest_id}
 
 
@@ -272,14 +296,15 @@ async def transparency_checkpoint() -> CheckpointResponse:
 async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     """An inclusion proof for a manifest, pinned to a signed checkpoint so the client can bind the
     leaf to a signed tree head without trusting this endpoint."""
-    index = _leaf_index.get(manifest_id)
-    manifest = get_resolver().get_manifest(manifest_id)
+    log = get_log()
+    index = log.index_for(manifest_id)
+    manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
     if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
     # No await between these reads, so the proof, the root, and the checkpoint share one tree state.
-    size = _log.size
-    root = _log.root(size)
-    proof = _log.prove_inclusion(index, size)
+    size = log.size
+    root = log.root(size)
+    proof = log.prove_inclusion(index, size)
     return InclusionProofResponse(
         manifest_id=manifest_id,
         leaf_index=index,
@@ -290,5 +315,5 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
         checkpoint=_signed_head(),
         public_key_hex=_public_key_hex(),
         key_source=_key_source,
-        server_verified=_log.verify_inclusion(index, proof, root),
+        server_verified=log.verify_inclusion(index, proof, root),
     )

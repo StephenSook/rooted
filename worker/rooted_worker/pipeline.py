@@ -89,7 +89,7 @@ class IngestPipeline:
         cose = sign_manifest(manifest, self._key)
         self._storage.put(signature_key(manifest.manifest_id), cose)
         self._resolver.register(manifest, watermarked, watermark_id)
-        index = self._log.append(manifest.canonical_hash())
+        index = self._log.append(manifest.manifest_id, manifest.canonical_hash())
         return IngestResult(
             manifest=manifest,
             cose_signature=cose,

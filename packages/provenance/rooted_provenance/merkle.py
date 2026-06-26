@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 import binascii
+from dataclasses import dataclass, field
+from typing import Protocol
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -31,15 +33,50 @@ def _checkpoint_head(epoch: int, tree_size: int, root_hex: str) -> bytes:
     return f"rooted-checkpoint:{epoch}:{tree_size}:{root_hex}".encode()
 
 
+class LeafStore(Protocol):
+    """Durable, ordered record of the leaves so the in-memory tree can be rebuilt after a restart.
+
+    Implemented in-memory here and by PostgresTransparencyStore for the deployed path.
+    """
+
+    def append(self, manifest_id: str, leaf_hash: str) -> None: ...
+    def all(self) -> list[tuple[str, str]]: ...  # (manifest_id, leaf_hash) in append order
+
+
+@dataclass
+class InMemoryLeafStore:
+    """Non-durable leaf store for the credential-free demo and tests."""
+
+    leaves: list[tuple[str, str]] = field(default_factory=list)
+
+    def append(self, manifest_id: str, leaf_hash: str) -> None:
+        self.leaves.append((manifest_id, leaf_hash))
+
+    def all(self) -> list[tuple[str, str]]:
+        return list(self.leaves)
+
+
 class TransparencyLog:
-    """A thin wrapper over an in-memory Merkle tree. SqliteTree is the persistent swap for prod."""
+    """An in-memory Merkle tree plus a manifest-id -> leaf-index map, both rebuilt on construction
+    from a durable LeafStore. Persisting the ordered leaves (and replaying them) means inclusion
+    proofs survive a restart or a second instance, instead of resetting to an empty tree."""
 
-    def __init__(self) -> None:
+    def __init__(self, leaf_store: LeafStore | None = None) -> None:
         self._tree = InmemoryTree(algorithm="sha256")
+        self._index: dict[str, int] = {}
+        self._store: LeafStore = leaf_store if leaf_store is not None else InMemoryLeafStore()
+        for manifest_id, leaf_hash in self._store.all():
+            self._index[manifest_id] = self._tree.append_entry(leaf_hash.encode())
 
-    def append(self, manifest_hash_hex: str) -> int:
-        """Add a manifest's canonical hash as a leaf; return its 1-based index."""
-        return self._tree.append_entry(manifest_hash_hex.encode())
+    def append(self, manifest_id: str, leaf_hash: str) -> int:
+        """Add a manifest's canonical hash as a leaf (persisting it); return its 1-based index."""
+        position = self._tree.append_entry(leaf_hash.encode())
+        self._index[manifest_id] = position
+        self._store.append(manifest_id, leaf_hash)
+        return position
+
+    def index_for(self, manifest_id: str) -> int | None:
+        return self._index.get(manifest_id)
 
     @property
     def size(self) -> int:

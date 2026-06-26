@@ -146,3 +146,32 @@ def test_register_is_atomic_and_rolls_back_on_failure(index: PostgresIndex) -> N
     assert index.get_manifest(m.manifest_id) is None
     assert index.manifest_for_watermark("RT5") is None
     assert index.fingerprints_for(m.manifest_id) == []
+
+
+def test_postgres_transparency_store_persists_and_rehydrates(_conninfo: str) -> None:
+    # The transparency tree survives a restart: a fresh log over the same Postgres store replays the
+    # persisted leaves, so inclusion proofs resolve instead of resetting to an empty tree.
+    from rooted_provenance.merkle import TransparencyLog
+    from rooted_storage.transparency import PostgresTransparencyStore
+
+    store = PostgresTransparencyStore(_conninfo)
+    store.clear()
+    try:
+        log = TransparencyLog(store)
+        log.append("urn:c2pa:p1", "hashp1")
+        log.append("urn:c2pa:p2", "hashp2")
+        root_before = log.root()
+    finally:
+        store.close()
+
+    store2 = PostgresTransparencyStore(_conninfo)
+    try:
+        reborn = TransparencyLog(store2)
+        assert reborn.size == 2
+        assert reborn.root() == root_before
+        assert reborn.index_for("urn:c2pa:p1") == 1
+        assert reborn.index_for("urn:c2pa:p2") == 2
+        proof = reborn.prove_inclusion(1, size=2)
+        assert reborn.verify_inclusion(1, proof, reborn.root()) is True
+    finally:
+        store2.close()

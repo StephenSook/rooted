@@ -42,6 +42,9 @@ build/
 *.tsbuildinfo
 .vercel/
 
+# --- Playwright MCP scratch output (screenshots, snapshots, console logs) ---
+.playwright-mcp/
+
 # --- Model weights / large binaries (use external hosting, not git) ---
 *.pt
 *.pth

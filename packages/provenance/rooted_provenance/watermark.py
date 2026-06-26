@@ -39,11 +39,27 @@ class TrustMarkWatermarker:
     def __init__(self) -> None:
         from trustmark import TrustMark
 
+        # loadRemover=False: Rooted only encodes and decodes, never removes a watermark, so skip
+        # downloading and loading the remover model.
         self._tm = TrustMark(
-            verbose=False, model_type="P", encoding_type=TrustMark.Encoding.BCH_SUPER
+            verbose=False,
+            model_type="P",
+            encoding_type=TrustMark.Encoding.BCH_SUPER,
+            loadRemover=False,
         )
+        # Text mode packs 7-bit ASCII; BCH_SUPER carries 40 bits, so 5 chars. Query rather than
+        # hardcode, since capacity depends on the encoding type.
+        self._max_chars = self._tm.schemaCapacity() // 7
 
     def encode(self, image: Image.Image, secret: str) -> Image.Image:
+        # The raw encoder silently truncates an over-long secret (e.g. "TOOLONG" -> "TOOLO\x13"),
+        # which would corrupt the watermark id so it never matches the registry and recovery would
+        # fail silently. Fail loudly at the boundary instead.
+        if len(secret) > self._max_chars:
+            raise ValueError(
+                f"watermark id {secret!r} exceeds the BCH_SUPER text capacity of "
+                f"{self._max_chars} chars; it would be silently truncated"
+            )
         return self._tm.encode(image.convert("RGB"), secret, MODE="text")
 
     def decode(self, image: Image.Image) -> tuple[str | None, float]:

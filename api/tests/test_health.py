@@ -1,11 +1,13 @@
-"""Smoke test for the liveness probe, exercised against the ASGI app in-process."""
+"""Smoke test for the liveness probe and the startup lifespan, against the ASGI app in-process."""
 
 from __future__ import annotations
 
 import httpx
+import pytest
 from httpx import ASGITransport
 
-from rooted_api.main import app
+import rooted_api.sbr as sbr
+from rooted_api.main import app, lifespan
 
 
 async def test_health_returns_ok() -> None:
@@ -16,3 +18,13 @@ async def test_health_returns_ok() -> None:
     body = resp.json()
     assert body["status"] == "ok"
     assert body["service"] == "rooted-api"
+
+
+async def test_lifespan_builds_resolver_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)  # in-memory path, no DB needed
+    sbr.set_resolver(None)
+    try:
+        async with lifespan(app):
+            assert sbr._resolver is not None  # built during startup, not lazily on first request
+    finally:
+        sbr.set_resolver(None)

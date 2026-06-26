@@ -1,12 +1,12 @@
 """The vendor-neutral C2PA Soft Binding Resolution API (C2PA v2.4 route shapes).
 
-This scaffold wires the resolver to an in-memory index and the fake watermarker so the recovery
-path runs end to end without credentials. The real deployment swaps in the Postgres index, the B2
-store, and the TrustMark watermarker via the get_resolver dependency. The /ingest route is a
-convenience for the demo; the spec query routes are byContent and byBinding.
+The resolver uses the Postgres index when DATABASE_URL is set and the in-memory index otherwise, so
+the recovery path runs end to end with or without credentials. The B2 store and the TrustMark
+watermarker swap in at the same seams. The /ingest route is a convenience for the demo; the spec
+query routes are byContent and byBinding.
 
-Note: response field names are snake_case here; camelCase spec aliasing lands with the schemathesis
-contract pass.
+Response models inherit from CamelModel, so the HTTP surface (and the generated OpenAPI) emit
+camelCase aliases, while model_dump() stays snake_case for storage, canonical hashing, and signing.
 """
 
 from __future__ import annotations
@@ -125,12 +125,24 @@ def set_resolver(resolver: Resolver | None) -> None:
     _resolver = resolver
 
 
-async def _read_image(file: UploadFile) -> Image.Image:
-    data = await file.read()
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # cap on an uploaded asset
+
+
+def _decode_image(data: bytes) -> Image.Image:
+    """Decode uploaded bytes to an RGB image, failing closed on untrusted input. An oversized upload
+    is rejected (413) before decode; anything that is not a decodable image, including a
+    decompression bomb whose header declares a huge size, becomes a 415 rather than a 500.
+    DecompressionBombError is not an OSError, so it must be caught explicitly."""
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="uploaded asset too large")
     try:
         return Image.open(io.BytesIO(data)).convert("RGB")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, ValueError) as exc:
         raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
+
+
+async def _read_image(file: UploadFile) -> Image.Image:
+    return _decode_image(await file.read())
 
 
 @router.get("/services/supportedAlgorithms", response_model=SupportedAlgorithms)
@@ -143,6 +155,7 @@ async def supported_algorithms() -> SupportedAlgorithms:
     responses={
         400: {"description": "malformed request body"},
         409: {"description": "manifest id already exists"},
+        413: {"description": "uploaded asset too large"},
         415: {"description": "invalid or unsupported image"},
     },
 )
@@ -161,10 +174,7 @@ async def ingest(
     if resolver.get_manifest(manifest_id) is not None:
         raise HTTPException(status_code=409, detail="manifest id already exists")
     data = await file.read()
-    try:
-        image = Image.open(io.BytesIO(data)).convert("RGB")
-    except (UnidentifiedImageError, OSError) as exc:
-        raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
+    image = _decode_image(data)
     manifest = Manifest(
         manifest_id=manifest_id,
         asset_sha256=hashlib.sha256(data).hexdigest(),
@@ -182,6 +192,7 @@ async def ingest(
     response_model=SoftBindingQueryResult,
     responses={
         400: {"description": "malformed request body"},
+        413: {"description": "uploaded asset too large"},
         415: {"description": "invalid or unsupported image"},
     },
 )

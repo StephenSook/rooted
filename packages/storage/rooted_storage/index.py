@@ -14,6 +14,13 @@ on later; the exact bit_count path here is the wired, tested baseline, so the cl
 
 The Index protocol is synchronous (the resolver calls it synchronously), so this uses a synchronous
 psycopg connection. A pooled async driver is the production swap when the resolver goes async.
+
+Known production-hardening follow-ups, to land with the live Render Postgres deploy (the in-memory
+demo path is unaffected): use psycopg_pool with reconnect (a dropped single connection otherwise
+wedges recovery until restart); offload these blocking calls off the async event loop; make
+Resolver.register atomic in one transaction (autocommit lets a partial ingest orphan a manifest);
+and persist the transparency tree alongside the manifests (it is in-memory today, so proofs reset on
+restart). Tracked in the PR description and project memory.
 """
 
 from __future__ import annotations

@@ -32,6 +32,10 @@ class Index(Protocol):
     def put_fingerprint(self, pdq_bits: str, manifest_id: str) -> None: ...
     def nearest_fingerprint(self, pdq_bits: str, threshold: int) -> tuple[str, int] | None: ...
     def fingerprints_for(self, manifest_id: str) -> list[str]: ...
+    def register(self, manifest: Manifest, watermark_id: str, pdq_bits: str) -> None:
+        """Atomically index a freshly generated asset (manifest, watermark binding, and PDQ
+        together) so a partial ingest never leaves a manifest that cannot be recovered."""
+        ...
 
 
 @dataclass
@@ -68,6 +72,11 @@ class InMemoryIndex:
     def fingerprints_for(self, manifest_id: str) -> list[str]:
         return [bits for bits, mid in self.fingerprints if mid == manifest_id]
 
+    def register(self, manifest: Manifest, watermark_id: str, pdq_bits: str) -> None:
+        self.put_manifest(manifest)
+        self.put_watermark_binding(watermark_id, manifest.manifest_id)
+        self.put_fingerprint(pdq_bits, manifest.manifest_id)
+
 
 class Resolver:
     def __init__(self, index: Index, watermarker: Watermarker) -> None:
@@ -75,11 +84,11 @@ class Resolver:
         self._wm = watermarker
 
     def register(self, manifest: Manifest, image: Image.Image, watermark_id: str) -> None:
-        """Index a freshly generated asset: store the manifest, its watermark binding, its PDQ."""
-        self._index.put_manifest(manifest)
-        self._index.put_watermark_binding(watermark_id, manifest.manifest_id)
+        """Index a freshly generated asset: store the manifest, its watermark binding, its PDQ.
+
+        Delegates to the index's atomic register so a partial ingest cannot orphan a manifest."""
         bits, _ = compute_pdq(image)
-        self._index.put_fingerprint(bits, manifest.manifest_id)
+        self._index.register(manifest, watermark_id, bits)
 
     def _fingerprint_matches(self, pdq_bits: str, manifest_id: str) -> bool:
         return any(is_match(pdq_bits, fp) for fp in self._index.fingerprints_for(manifest_id))

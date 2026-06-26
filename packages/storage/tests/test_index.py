@@ -127,3 +127,22 @@ def test_resolve_by_binding_via_resolver(index: PostgresIndex) -> None:
     resolver.register(m, img, watermark_id="RT3")
     out = resolver.resolve_by_binding(ALG_TRUSTMARK_P, "RT3")
     assert out.matches[0].manifest_id == m.manifest_id
+
+
+def test_register_populates_manifest_binding_and_fingerprint(index: PostgresIndex) -> None:
+    m = _manifest(4)
+    index.register(m, "RT4", "0" * 256)
+    assert index.get_manifest(m.manifest_id) == m
+    assert index.manifest_for_watermark("RT4") == m.manifest_id
+    assert index.fingerprints_for(m.manifest_id) == ["0" * 256]
+
+
+def test_register_is_atomic_and_rolls_back_on_failure(index: PostgresIndex) -> None:
+    m = _manifest(5)
+    # A bad PDQ (not a 256-bit string) fails the bit(256) cast after the manifest insert; the whole
+    # register must roll back so no orphaned, unrecoverable manifest is left behind.
+    with pytest.raises(Exception):  # noqa: B017 - psycopg raises a DataError subclass here
+        index.register(m, "RT5", "not-256-bits")
+    assert index.get_manifest(m.manifest_id) is None
+    assert index.manifest_for_watermark("RT5") is None
+    assert index.fingerprints_for(m.manifest_id) == []

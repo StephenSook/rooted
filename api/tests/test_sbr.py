@@ -67,3 +67,27 @@ async def test_unknown_manifest_404() -> None:
     async with _client() as c:
         r = await c.get("/manifests/urn:c2pa:nope")
     assert r.status_code == 404
+
+
+async def test_get_manifest_enforces_redaction_of_real_personal_provenance() -> None:
+    # The ingest route never sets personal_provenance, so asserting it is empty after ingest is
+    # vacuous. Register a manifest that actually carries PII, then prove the read route strips it
+    # (this fails if get_manifest stops calling .redacted()).
+    from rooted_api.sbr import get_resolver
+    from rooted_provenance.models import Manifest
+
+    image = Image.open(io.BytesIO(_png(31))).convert("RGB")
+    manifest = Manifest(
+        manifest_id="urn:c2pa:pii",
+        asset_sha256=hashlib.sha256(_png(31)).hexdigest(),
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream"},
+        personal_provenance={"prompt": "a private prompt", "user": "alice"},
+    )
+    get_resolver().register(manifest, image, "RTpii")
+    async with _client() as c:
+        r = await c.get("/manifests/urn:c2pa:pii")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["system_provenance"]["model"] == "seedream"
+    assert body["personal_provenance"] == {}

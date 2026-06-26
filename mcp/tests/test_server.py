@@ -106,5 +106,5 @@ async def test_query_transparency_log_returns_proof(sbr: SbrClient) -> None:
     async with Client(mcp) as client:
         result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:mcp4"})
     assert result.data["included"] is True
-    assert result.data["inclusion_proof"]["verified"] is True
+    assert result.data["inclusion_proof"]["server_verified"] is True
     assert result.data["checkpoint"]["checkpoint"]["tree_size"] >= 1

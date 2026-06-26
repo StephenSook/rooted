@@ -102,7 +102,14 @@ async def supported_algorithms() -> SupportedAlgorithms:
     return SupportedAlgorithms()
 
 
-@router.post("/ingest")
+@router.post(
+    "/ingest",
+    responses={
+        400: {"description": "malformed request body"},
+        409: {"description": "manifest id already exists"},
+        415: {"description": "invalid or unsupported image"},
+    },
+)
 async def ingest(
     file: UploadFile = File(...),
     manifest_id: str = Form(...),
@@ -134,7 +141,14 @@ async def ingest(
     return {"manifestId": manifest_id}
 
 
-@router.post("/matches/byContent", response_model=SoftBindingQueryResult)
+@router.post(
+    "/matches/byContent",
+    response_model=SoftBindingQueryResult,
+    responses={
+        400: {"description": "malformed request body"},
+        415: {"description": "invalid or unsupported image"},
+    },
+)
 async def matches_by_content(file: UploadFile = File(...)) -> SoftBindingQueryResult:
     image = await _read_image(file)
     return get_resolver().resolve_by_content(image)
@@ -145,7 +159,11 @@ async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     return get_resolver().resolve_by_binding(alg, value)
 
 
-@router.get("/manifests/{manifest_id:path}", response_model=Manifest)
+@router.get(
+    "/manifests/{manifest_id:path}",
+    response_model=Manifest,
+    responses={404: {"description": "manifest not found"}},
+)
 async def get_manifest(manifest_id: str) -> Manifest:
     manifest = get_resolver().get_manifest(manifest_id)
     if manifest is None:
@@ -195,7 +213,11 @@ async def transparency_checkpoint() -> CheckpointResponse:
     )
 
 
-@router.get("/transparency/proof/{manifest_id:path}", response_model=InclusionProofResponse)
+@router.get(
+    "/transparency/proof/{manifest_id:path}",
+    response_model=InclusionProofResponse,
+    responses={404: {"description": "manifest not in transparency log"}},
+)
 async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     """An inclusion proof for a manifest, pinned to a signed checkpoint so the client can bind the
     leaf to a signed tree head without trusting this endpoint."""

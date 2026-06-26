@@ -13,13 +13,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from rooted_api.sbr import get_resolver
+from rooted_api.sbr import get_log, get_resolver
 from rooted_api.sbr import router as sbr_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    get_resolver()  # build + validate the resolver and its DB pool now, not on first request
+    # Build + validate the resolver/DB pool and rehydrate the transparency log now, not on first
+    # request, so a misconfigured database fails the deploy loudly.
+    get_resolver()
+    get_log()
     yield
 
 

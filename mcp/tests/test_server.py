@@ -2,7 +2,8 @@
 
 The tools talk to the SBR API over httpx; these tests point that client at the in-process FastAPI
 app (ASGITransport), so the full path runs with no network and no credentials. The shared in-process
-state (resolver index + transparency log) is populated by ingesting through the same app.
+state (resolver index + transparency log) is populated by ingesting through the same app. Untrusted
+input (bad base64, non-image bytes) must return a structured result, not crash the tool.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import pytest
 from fastmcp import Client
 from httpx import ASGITransport
 from PIL import Image
+from pymerkle import MerkleProof
 
 from rooted_api.main import app
 from rooted_mcp.server import SbrClient, mcp, set_client
@@ -33,6 +35,14 @@ def _png(seed: int) -> bytes:
 
 def _asgi_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+@pytest.fixture(autouse=True)
+def _reset_client() -> AsyncIterator[None]:
+    # Reset the module-global SBR client after every test so a fixtureless test never reuses a stale
+    # (closed) client or silently opens a real network client.
+    yield
+    set_client(None)
 
 
 @pytest.fixture
@@ -79,6 +89,32 @@ async def test_verify_asset_reports_no_match(sbr: SbrClient) -> None:
     async with Client(mcp) as client:
         result = await client.call_tool("verify_asset", {"image_base64": b64})
     assert result.data["recovered"] is False
+    assert result.data["reason"] == "no soft-binding match"
+
+
+async def test_verify_asset_rejects_malformed_base64(sbr: SbrClient) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool("verify_asset", {"image_base64": "not base64!!!"})
+    assert result.data["recovered"] is False
+    assert "error" in result.data
+
+
+async def test_verify_asset_handles_non_image_bytes(sbr: SbrClient) -> None:
+    b64 = base64.b64encode(b"this is valid base64 but not an image").decode()
+    async with Client(mcp) as client:
+        result = await client.call_tool("verify_asset", {"image_base64": b64})
+    assert result.data["recovered"] is False
+
+
+async def test_verify_asset_not_recovered_when_manifest_absent() -> None:
+    # A soft-binding match exists but the manifest read 404s (an inconsistent backend state). The
+    # tool must not claim recovery with empty provenance.
+    set_client(_MatchWithoutManifestClient())
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "verify_asset", {"image_base64": base64.b64encode(_png(1)).decode()}
+        )
+    assert result.data["recovered"] is False
 
 
 async def test_recover_manifest_by_content_is_redacted(sbr: SbrClient) -> None:
@@ -88,7 +124,6 @@ async def test_recover_manifest_by_content_is_redacted(sbr: SbrClient) -> None:
         result = await client.call_tool("recover_manifest", {"image_base64": b64})
     manifest = result.data["manifest"]
     assert manifest["manifest_id"] == "urn:c2pa:mcp2"
-    assert manifest["personal_provenance"] == {}
 
 
 async def test_recover_manifest_by_binding(sbr: SbrClient) -> None:
@@ -101,10 +136,68 @@ async def test_recover_manifest_by_binding(sbr: SbrClient) -> None:
     assert result.data["manifest"]["manifest_id"] == "urn:c2pa:mcp3"
 
 
-async def test_query_transparency_log_returns_proof(sbr: SbrClient) -> None:
+async def test_recover_manifest_redacts_real_personal_provenance(sbr: SbrClient) -> None:
+    # Register a manifest that actually carries PII, then prove the recovered copy is redacted.
+    from rooted_api.sbr import get_resolver
+    from rooted_provenance.models import Manifest
+
+    image = Image.open(io.BytesIO(_png(41))).convert("RGB")
+    manifest = Manifest(
+        manifest_id="urn:c2pa:mcppii",
+        asset_sha256="ab",
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "flux"},
+        personal_provenance={"prompt": "a secret prompt", "user": "bob"},
+    )
+    get_resolver().register(manifest, image, "RTmcppii")
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "recover_manifest", {"alg": "com.adobe.trustmark.P", "value": "RTmcppii"}
+        )
+    assert result.data["recovered"] is True
+    assert result.data["manifest"]["system_provenance"]["model"] == "flux"
+    assert result.data["manifest"]["personal_provenance"] == {}
+
+
+async def test_recover_manifest_missing_args_has_discriminator(sbr: SbrClient) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool("recover_manifest", {})
+    assert result.data["recovered"] is False
+    assert "error" in result.data
+
+
+async def test_query_transparency_log_returns_included_proof(sbr: SbrClient) -> None:
     await _ingest("urn:c2pa:mcp4", "RT24", 24)
     async with Client(mcp) as client:
         result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:mcp4"})
     assert result.data["included"] is True
     assert result.data["inclusion_proof"]["server_verified"] is True
-    assert result.data["checkpoint"]["checkpoint"]["tree_size"] >= 1
+
+
+async def test_query_transparency_log_proof_is_independently_verifiable(sbr: SbrClient) -> None:
+    await _ingest("urn:c2pa:mcp5", "RT25", 25)
+    async with Client(mcp) as client:
+        result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:mcp5"})
+    proof_response = result.data["inclusion_proof"]
+    proof = MerkleProof.deserialize(proof_response["proof"])
+    assert proof.resolve() == bytes.fromhex(proof_response["checkpoint"]["root_hash"])
+
+
+async def test_query_transparency_log_absent_manifest(sbr: SbrClient) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:none"})
+    assert result.data["included"] is False
+
+
+class _MatchWithoutManifestClient(SbrClient):
+    """A client whose content query matches but whose manifest read 404s, to exercise the
+    inconsistent-backend edge that the in-memory scaffold cannot produce."""
+
+    def __init__(self) -> None:  # no httpx client needed
+        pass
+
+    async def matches_by_content(self, image: bytes) -> dict:
+        return {"matches": [{"manifest_id": "urn:c2pa:ghost", "similarity_score": 100}]}
+
+    async def manifest(self, manifest_id: str) -> dict | None:
+        return None

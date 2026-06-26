@@ -22,7 +22,7 @@ from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest, SoftBinding, can
 from rooted_provenance.resolver import Resolver
 from rooted_provenance.signing import sign_manifest
 from rooted_provenance.watermark import Watermarker
-from rooted_storage.storage import Storage, asset_key, manifest_key
+from rooted_storage.storage import Storage, asset_key, manifest_key, signature_key
 
 from .generator import Generator
 
@@ -73,6 +73,7 @@ class IngestPipeline:
         self._storage.put(asset_key(sha), asset_bytes)
         self._storage.put(manifest_key(manifest.manifest_id), canonical_json(manifest.model_dump()))
         cose = sign_manifest(manifest, self._key)
+        self._storage.put(signature_key(manifest.manifest_id), cose)
         self._resolver.register(manifest, watermarked, watermark_id)
         index = self._log.append(manifest.canonical_hash())
         return IngestResult(manifest=manifest, cose_signature=cose, merkle_index=index)

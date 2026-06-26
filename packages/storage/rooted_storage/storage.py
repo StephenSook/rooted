@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 
 ASSET_PREFIX = "assets"
 MANIFEST_PREFIX = "manifests"
+SIGNATURE_PREFIX = "signatures"
 CHECKPOINT_PREFIX = "merkle/checkpoints"
 
 
@@ -23,6 +24,11 @@ def asset_key(sha256: str) -> str:
 
 def manifest_key(manifest_id: str) -> str:
     return f"{MANIFEST_PREFIX}/{manifest_id.replace(':', '_')}.json"
+
+
+def signature_key(manifest_id: str) -> str:
+    """B2 key for the manifest's COSE signature, so the signature is durable, not caller-held."""
+    return f"{SIGNATURE_PREFIX}/{manifest_id.replace(':', '_')}.cose"
 
 
 def checkpoint_key(epoch: int) -> str:

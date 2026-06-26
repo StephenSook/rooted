@@ -6,7 +6,7 @@ from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, verify_manifest
 from rooted_provenance.watermark import FakeWatermarker
-from rooted_storage.storage import InMemoryStorage, asset_key
+from rooted_storage.storage import InMemoryStorage, asset_key, signature_key
 from rooted_worker.generator import FakeGenerator
 from rooted_worker.pipeline import IngestPipeline
 
@@ -25,6 +25,9 @@ def test_ingest_then_recover_end_to_end() -> None:
     assert verify_manifest(result.cose_signature, result.manifest, pub) is True
     assert result.merkle_index == 1
     assert storage.exists(asset_key(result.manifest.asset_sha256))
+    # the COSE signature is persisted to storage and verifies from there, not just caller-held
+    stored_cose = storage.get(signature_key(result.manifest.manifest_id))
+    assert verify_manifest(stored_cose, result.manifest, pub) is True
     assert result.manifest.personal_provenance["prompt"]  # captured, redacted later on read
 
     # the asset is now RECOVERABLE: the same generated (watermarked) image resolves to the manifest

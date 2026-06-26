@@ -15,7 +15,6 @@ import hashlib
 import io
 import os
 from datetime import UTC, datetime
-from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -48,20 +47,42 @@ _resolver = Resolver(InMemoryIndex(), FakeWatermarker())
 # in-memory tree keeps the demo credential-free and swaps at the same seam as the resolver above.
 _log = TransparencyLog()
 _leaf_index: dict[str, int] = {}
-_epoch = count(1)
 
 
-def _load_signing_key() -> Ed25519PrivateKey:
-    """The Ed25519 key that signs checkpoints. Loaded from ED25519_PRIVATE_KEY_PATH in production;
-    an ephemeral key is generated otherwise, so a dev or CI run still produces verifiable heads."""
+def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
+    """The Ed25519 key that signs checkpoints, with its provenance.
+
+    A configured key loads from ED25519_PRIVATE_KEY_PATH. When none is set we fail closed if a
+    key is required (ROOTED_REQUIRE_SIGNING_KEY=1 or APP_ENV=production), so a production
+    tamper-evidence anchor is never silently signed by a throwaway key. Otherwise an ephemeral key
+    is generated, and key_source reports "ephemeral" so a dev/CI key is never a trust anchor.
+    """
     path = os.environ.get("ED25519_PRIVATE_KEY_PATH")
     if path:
-        return load_private_key(Path(path).read_bytes())
+        return load_private_key(Path(path).read_bytes()), "configured"
+    require = os.environ.get("ROOTED_REQUIRE_SIGNING_KEY") == "1" or (
+        os.environ.get("APP_ENV") == "production"
+    )
+    if require:
+        raise RuntimeError(
+            "ED25519_PRIVATE_KEY_PATH is required when ROOTED_REQUIRE_SIGNING_KEY=1 "
+            "or APP_ENV=production; refusing to sign checkpoints with an ephemeral key"
+        )
     priv, _pub = generate_keypair()
-    return priv
+    return priv, "ephemeral"
 
 
-_signing_key = _load_signing_key()
+_signing_key, _key_source = _load_signing_key()
+
+
+def _public_key_hex() -> str:
+    return str(public_key_bytes(_signing_key.public_key()).hex())
+
+
+def _signed_head() -> MerkleCheckpoint:
+    """The signed tree head for the current log state. The epoch IS the tree size, so the same tree
+    state always yields the same signed checkpoint (a GET is idempotent and reproducible)."""
+    return _log.checkpoint(_log.size, _signing_key, datetime.now(UTC).isoformat())
 
 
 def get_resolver() -> Resolver:
@@ -133,45 +154,68 @@ async def get_manifest(manifest_id: str) -> Manifest:
 
 
 class CheckpointResponse(BaseModel):
-    """A signed Merkle tree head plus the public key to verify it independently."""
+    """A signed Merkle tree head plus the public key to verify it independently.
+
+    key_source is "configured" for a real loaded key or "ephemeral" for a dev/CI key, so a client
+    never mistakes a throwaway key for a trust anchor.
+    """
 
     checkpoint: MerkleCheckpoint
     public_key_hex: str
+    key_source: str
 
 
 class InclusionProofResponse(BaseModel):
-    """An inclusion proof that a manifest's leaf is in the current tree head."""
+    """A self-contained, independently-verifiable inclusion proof.
+
+    The client resolves the serialized proof to a root and confirms that root equals the embedded
+    signed checkpoint's root_hash, then verifies the checkpoint signature against public_key_hex.
+    server_verified is only the server's own check and is not a substitute for that client-side
+    verification. leaf_hash is the manifest's canonical hash (the leaf), unchanged by redaction.
+    """
 
     manifest_id: str
     leaf_index: int
+    leaf_hash: str
     tree_size: int
     root_hash: str
     proof: dict[str, Any]
-    verified: bool
+    checkpoint: MerkleCheckpoint
+    public_key_hex: str
+    key_source: str
+    server_verified: bool
 
 
 @router.get("/transparency/checkpoint", response_model=CheckpointResponse)
 async def transparency_checkpoint() -> CheckpointResponse:
-    """The current signed tree head. The public key travels with it so a client can verify the
-    head without trusting this endpoint."""
-    cp = _log.checkpoint(next(_epoch), _signing_key, datetime.now(UTC).isoformat())
-    public_key_hex = public_key_bytes(_signing_key.public_key()).hex()
-    return CheckpointResponse(checkpoint=cp, public_key_hex=public_key_hex)
+    """The current signed tree head. Idempotent: the epoch is the tree size, so re-reading an
+    unchanged tree returns the same signed checkpoint. The public key travels with it."""
+    return CheckpointResponse(
+        checkpoint=_signed_head(), public_key_hex=_public_key_hex(), key_source=_key_source
+    )
 
 
 @router.get("/transparency/proof/{manifest_id:path}", response_model=InclusionProofResponse)
 async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
-    """An inclusion proof for a manifest that was ingested into the transparency log."""
+    """An inclusion proof for a manifest, pinned to a signed checkpoint so the client can bind the
+    leaf to a signed tree head without trusting this endpoint."""
     index = _leaf_index.get(manifest_id)
-    if index is None:
+    manifest = get_resolver().get_manifest(manifest_id)
+    if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
-    proof = _log.prove_inclusion(index)
-    root = _log.root()
+    # No await between these reads, so the proof, the root, and the checkpoint share one tree state.
+    size = _log.size
+    root = _log.root(size)
+    proof = _log.prove_inclusion(index, size)
     return InclusionProofResponse(
         manifest_id=manifest_id,
         leaf_index=index,
-        tree_size=_log.size,
+        leaf_hash=manifest.canonical_hash(),
+        tree_size=size,
         root_hash=root.hex(),
         proof=proof.serialize(),
-        verified=_log.verify_inclusion(index, proof, root),
+        checkpoint=_signed_head(),
+        public_key_hex=_public_key_hex(),
+        key_source=_key_source,
+        server_verified=_log.verify_inclusion(index, proof, root),
     )

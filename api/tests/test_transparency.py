@@ -1,9 +1,10 @@
-"""Transparency log routes: a signed checkpoint and an inclusion proof for an ingested manifest.
+"""Transparency log routes: a signed checkpoint and a self-contained, independently-verifiable
+inclusion proof for an ingested manifest.
 
-The Merkle log on the API side is populated by /ingest (the convenience generation route), so the
-recovery server can also serve the tamper-evidence surface the MCP product tools and the front end
-read. Checkpoints are signed (Ed25519); the public key travels with the checkpoint so a client can
-verify the tree head independently.
+The proof a client gets back must be verifiable WITHOUT trusting the server: it carries the
+serialized pymerkle proof and the signed checkpoint (tree head) it is pinned to, plus the public
+key, so the client resolves the proof to a root and checks that root is the signed head. These
+tests verify client-side, not just via the server's own flag.
 """
 
 from __future__ import annotations
@@ -14,10 +15,11 @@ import httpx
 import numpy as np
 from httpx import ASGITransport
 from PIL import Image
+from pymerkle import MerkleProof
 
 from rooted_api.main import app
 from rooted_provenance.merkle import verify_checkpoint
-from rooted_provenance.models import MerkleCheckpoint
+from rooted_provenance.models import Manifest, MerkleCheckpoint
 from rooted_provenance.signing import load_public_key
 
 
@@ -51,23 +53,57 @@ async def test_checkpoint_is_signed_and_verifies() -> None:
         r = await c.get("/transparency/checkpoint")
     assert r.status_code == 200
     body = r.json()
+    assert body["key_source"] == "ephemeral"
     cp = MerkleCheckpoint.model_validate(body["checkpoint"])
     assert cp.tree_size >= 1
+    assert cp.epoch == cp.tree_size  # epoch is tied to tree state, not a request counter
     pub = load_public_key(bytes.fromhex(body["public_key_hex"]))
     assert verify_checkpoint(cp, pub) is True
 
 
-async def test_inclusion_proof_for_ingested_manifest() -> None:
+async def test_checkpoint_get_is_idempotent() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:tlog_idem", "RT09", 19)
+        first = (await c.get("/transparency/checkpoint")).json()["checkpoint"]
+        second = (await c.get("/transparency/checkpoint")).json()["checkpoint"]
+    # No ingest between the two reads: the signed head must be identical (a GET must not mutate it).
+    assert first["epoch"] == second["epoch"]
+    assert first["tree_size"] == second["tree_size"]
+    assert first["root_hash"] == second["root_hash"]
+    assert first["signature_b64"] == second["signature_b64"]
+
+
+async def test_inclusion_proof_is_independently_verifiable() -> None:
     async with _client() as c:
         await _ingest(c, "urn:c2pa:tlog2", "RT02", 12)
         r = await c.get("/transparency/proof/urn:c2pa:tlog2")
+        manifest_body = (await c.get("/manifests/urn:c2pa:tlog2")).json()
     assert r.status_code == 200
     body = r.json()
     assert body["manifest_id"] == "urn:c2pa:tlog2"
     assert body["leaf_index"] >= 1
-    assert body["tree_size"] >= body["leaf_index"]
-    assert body["verified"] is True
-    assert body["proof"]
+    assert body["server_verified"] is True
+
+    # The proof is pinned to a signed checkpoint: its resolved root equals the signed root, and
+    # that checkpoint verifies against the returned key. This is the independent (non-server) check.
+    cp = MerkleCheckpoint.model_validate(body["checkpoint"])
+    pub = load_public_key(bytes.fromhex(body["public_key_hex"]))
+    assert verify_checkpoint(cp, pub) is True
+    proof = MerkleProof.deserialize(body["proof"])
+    assert proof.resolve() == bytes.fromhex(cp.root_hash)
+    assert body["root_hash"] == cp.root_hash
+
+    # The leaf is bound to the actual manifest: leaf_hash is the manifest's canonical hash, which
+    # redaction leaves unchanged (personal provenance is excluded from canonical_payload).
+    assert body["leaf_hash"] == Manifest.model_validate(manifest_body).canonical_hash()
+
+
+async def test_inclusion_proof_does_not_resolve_to_a_wrong_root() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:tlog3", "RT03", 13)
+        body = (await c.get("/transparency/proof/urn:c2pa:tlog3")).json()
+    proof = MerkleProof.deserialize(body["proof"])
+    assert proof.resolve() != b"\x00" * 32
 
 
 async def test_inclusion_proof_unknown_manifest_404() -> None:

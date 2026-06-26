@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, verify_manifest
@@ -49,3 +53,38 @@ def test_two_ingests_grow_the_log() -> None:
     assert a.merkle_index == 1
     assert b.merkle_index == 2
     assert a.manifest.manifest_id != b.manifest.manifest_id
+
+
+_C2PA_FIXTURES = Path(__file__).resolve().parents[2] / "research" / "c2pa-test-certs"
+_CERT = _C2PA_FIXTURES / "es256_certs.pem"
+_KEY = _C2PA_FIXTURES / "es256_private.key"
+
+
+@pytest.mark.skipif(
+    not (_CERT.exists() and _KEY.exists()),
+    reason="c2pa ES256 test cert fixtures not present (research/c2pa-test-certs/)",
+)
+def test_pipeline_embeds_c2pa_credential() -> None:
+    from rooted_provenance.claim import make_es256_signer, read_claim
+
+    signer = make_es256_signer(_CERT.read_text(), _KEY.read_bytes())
+    storage = InMemoryStorage()
+    priv, _ = generate_keypair()
+    pipeline = IngestPipeline(
+        FakeGenerator(),
+        storage,
+        FakeWatermarker(),
+        Resolver(InMemoryIndex(), FakeWatermarker()),
+        TransparencyLog(),
+        priv,
+        claim_signer=signer,
+    )
+    result = pipeline.run("a white mug", watermark_id="RT05")
+    assert result.credential_embedded is True
+
+    # the stored circulating asset carries a readable, valid C2PA credential with our soft-binding
+    data, state = read_claim(storage.get(asset_key(result.manifest.asset_sha256)))
+    assert state == "Valid"
+    active = data["active_manifest"]
+    labels = [a["label"] for a in data["manifests"][active]["assertions"]]
+    assert "com.rooted.soft_binding" in labels

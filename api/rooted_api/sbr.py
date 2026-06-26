@@ -21,11 +21,11 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel
 
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import (
     ALG_TRUSTMARK_P,
+    CamelModel,
     Manifest,
     MerkleCheckpoint,
     SoftBinding,
@@ -153,7 +153,7 @@ async def get_manifest(manifest_id: str) -> Manifest:
     return manifest.redacted()  # SB 942 split: withhold personal provenance on read
 
 
-class CheckpointResponse(BaseModel):
+class CheckpointResponse(CamelModel):
     """A signed Merkle tree head plus the public key to verify it independently.
 
     key_source is "configured" for a real loaded key or "ephemeral" for a dev/CI key, so a client
@@ -165,7 +165,7 @@ class CheckpointResponse(BaseModel):
     key_source: str
 
 
-class InclusionProofResponse(BaseModel):
+class InclusionProofResponse(CamelModel):
     """A self-contained, independently-verifiable inclusion proof.
 
     The client resolves the serialized proof to a root and confirms that root equals the embedded

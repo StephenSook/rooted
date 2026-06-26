@@ -12,7 +12,8 @@ import hashlib
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 # C2PA soft-binding algorithm identifiers. TrustMark variant P is the registered watermark we
 # advertise. PDQ is an INTERNAL index only and is never listed in SupportedAlgorithms.
@@ -30,7 +31,16 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-class SoftBinding(BaseModel):
+class CamelModel(BaseModel):
+    """Base for the JSON API contract: serialize to camelCase (the C2PA SBR spec style) while still
+    accepting and constructing by snake_case field name internally. model_dump() stays snake_case by
+    default, so storage, canonical hashing, and signing are unaffected; only HTTP responses (which
+    FastAPI serializes by alias) emit camelCase."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class SoftBinding(CamelModel):
     """A recoverable pointer from an asset to its manifest (a watermark ID or a fingerprint)."""
 
     alg: str
@@ -38,7 +48,7 @@ class SoftBinding(BaseModel):
     scope: str = "all"
 
 
-class Manifest(BaseModel):
+class Manifest(CamelModel):
     """The provenance record Rooted stores and recovers.
 
     system_provenance is disclosed on recovery (model, provider, timestamp). personal_provenance
@@ -75,7 +85,7 @@ class Manifest(BaseModel):
         return self.model_copy(update={"personal_provenance": {}})
 
 
-class Match(BaseModel):
+class Match(CamelModel):
     """One SBR query result: a manifest the queried asset binds to."""
 
     manifest_id: str
@@ -83,11 +93,11 @@ class Match(BaseModel):
     endpoint: str | None = None
 
 
-class SoftBindingQueryResult(BaseModel):
+class SoftBindingQueryResult(CamelModel):
     matches: list[Match] = Field(default_factory=list)
 
 
-class MerkleCheckpoint(BaseModel):
+class MerkleCheckpoint(CamelModel):
     """A signed tree head, written to B2 under Object Lock for tamper-evidence."""
 
     epoch: int
@@ -97,8 +107,19 @@ class MerkleCheckpoint(BaseModel):
     signature_b64: str
 
 
-class SupportedAlgorithms(BaseModel):
-    """Advertised at /services/supportedAlgorithms. PDQ is deliberately absent (internal only)."""
+class AlgorithmEntry(CamelModel):
+    """One advertised soft-binding algorithm (the C2PA SBR softBindingAlgList entry shape)."""
 
-    watermarks: list[str] = Field(default_factory=lambda: [ALG_TRUSTMARK_P])
-    fingerprints: list[str] = Field(default_factory=list)
+    alg: str
+
+
+class SupportedAlgorithms(CamelModel):
+    """Advertised at /services/supportedAlgorithms. PDQ is deliberately absent (internal only).
+
+    The C2PA SBR spec shape is arrays of objects with an `alg` field, not bare strings.
+    """
+
+    watermarks: list[AlgorithmEntry] = Field(
+        default_factory=lambda: [AlgorithmEntry(alg=ALG_TRUSTMARK_P)]
+    )
+    fingerprints: list[AlgorithmEntry] = Field(default_factory=list)

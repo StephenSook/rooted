@@ -130,21 +130,21 @@ async def verify_asset(image_base64: str) -> dict[str, Any]:
     match = _first_match(result)
     if match is None:
         return {"recovered": False, "reason": "no soft-binding match"}
-    manifest = await client.manifest(match["manifest_id"])
+    manifest = await client.manifest(match["manifestId"])
     if manifest is None:
         # A match without a retrievable manifest is an inconsistent state, not a recovery.
         return {
             "recovered": False,
             "reason": "match without manifest",
-            "manifest_id": match["manifest_id"],
+            "manifest_id": match["manifestId"],
         }
-    score = match.get("similarity_score")
+    score = match.get("similarityScore")
     return {
         "recovered": True,
-        "manifest_id": match["manifest_id"],
+        "manifest_id": match["manifestId"],
         "recovery_method": "fingerprint" if score is not None else "watermark",
         "similarity_score": score,
-        "system_provenance": manifest.get("system_provenance", {}),
+        "system_provenance": manifest.get("systemProvenance", {}),
     }
 
 
@@ -173,7 +173,7 @@ async def recover_manifest(
     match = _first_match(result)
     if match is None:
         return {"recovered": False, "reason": "no soft-binding match"}
-    manifest = await client.manifest(match["manifest_id"])
+    manifest = await client.manifest(match["manifestId"])
     return {"recovered": manifest is not None, "manifest": manifest}
 
 

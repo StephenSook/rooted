@@ -123,7 +123,7 @@ async def test_recover_manifest_by_content_is_redacted(sbr: SbrClient) -> None:
     async with Client(mcp) as client:
         result = await client.call_tool("recover_manifest", {"image_base64": b64})
     manifest = result.data["manifest"]
-    assert manifest["manifest_id"] == "urn:c2pa:mcp2"
+    assert manifest["manifestId"] == "urn:c2pa:mcp2"
 
 
 async def test_recover_manifest_by_binding(sbr: SbrClient) -> None:
@@ -133,7 +133,7 @@ async def test_recover_manifest_by_binding(sbr: SbrClient) -> None:
             "recover_manifest", {"alg": "com.adobe.trustmark.P", "value": "RT23"}
         )
     assert result.data["recovered"] is True
-    assert result.data["manifest"]["manifest_id"] == "urn:c2pa:mcp3"
+    assert result.data["manifest"]["manifestId"] == "urn:c2pa:mcp3"
 
 
 async def test_recover_manifest_redacts_real_personal_provenance(sbr: SbrClient) -> None:
@@ -155,8 +155,8 @@ async def test_recover_manifest_redacts_real_personal_provenance(sbr: SbrClient)
             "recover_manifest", {"alg": "com.adobe.trustmark.P", "value": "RTmcppii"}
         )
     assert result.data["recovered"] is True
-    assert result.data["manifest"]["system_provenance"]["model"] == "flux"
-    assert result.data["manifest"]["personal_provenance"] == {}
+    assert result.data["manifest"]["systemProvenance"]["model"] == "flux"
+    assert result.data["manifest"]["personalProvenance"] == {}
 
 
 async def test_recover_manifest_missing_args_has_discriminator(sbr: SbrClient) -> None:
@@ -171,7 +171,7 @@ async def test_query_transparency_log_returns_included_proof(sbr: SbrClient) -> 
     async with Client(mcp) as client:
         result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:mcp4"})
     assert result.data["included"] is True
-    assert result.data["inclusion_proof"]["server_verified"] is True
+    assert result.data["inclusion_proof"]["serverVerified"] is True
 
 
 async def test_query_transparency_log_proof_is_independently_verifiable(sbr: SbrClient) -> None:
@@ -180,7 +180,7 @@ async def test_query_transparency_log_proof_is_independently_verifiable(sbr: Sbr
         result = await client.call_tool("query_transparency_log", {"manifest_id": "urn:c2pa:mcp5"})
     proof_response = result.data["inclusion_proof"]
     proof = MerkleProof.deserialize(proof_response["proof"])
-    assert proof.resolve() == bytes.fromhex(proof_response["checkpoint"]["root_hash"])
+    assert proof.resolve() == bytes.fromhex(proof_response["checkpoint"]["rootHash"])
 
 
 async def test_query_transparency_log_absent_manifest(sbr: SbrClient) -> None:
@@ -197,7 +197,7 @@ class _MatchWithoutManifestClient(SbrClient):
         pass
 
     async def matches_by_content(self, image: bytes) -> dict:
-        return {"matches": [{"manifest_id": "urn:c2pa:ghost", "similarity_score": 100}]}
+        return {"matches": [{"manifestId": "urn:c2pa:ghost", "similarityScore": 100}]}
 
     async def manifest(self, manifest_id: str) -> dict | None:
         return None

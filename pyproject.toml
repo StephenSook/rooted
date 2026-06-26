@@ -9,7 +9,7 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["api", "packages/storage", "packages/provenance"]
+members = ["api", "worker", "packages/storage", "packages/provenance"]
 
 [dependency-groups]
 dev = [
@@ -28,7 +28,7 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["rooted_api", "rooted_storage", "rooted_provenance"]
+known-first-party = ["rooted_api", "rooted_storage", "rooted_provenance", "rooted_worker"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI idiom: File/Form/Depends/Query are evaluated as argument defaults by design.
@@ -36,7 +36,7 @@ extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Depends", "fa
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["api/tests", "packages/storage/tests", "packages/provenance/tests"]
+testpaths = ["api/tests", "worker/tests", "packages/storage/tests", "packages/provenance/tests"]
 
 [tool.mypy]
 python_version = "3.12"

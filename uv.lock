@@ -12,6 +12,7 @@ members = [
     "rooted-api",
     "rooted-provenance",
     "rooted-storage",
+    "rooted-worker",
 ]
 
 [[package]]
@@ -196,6 +197,34 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/41/d8/45bc23014df0d263d2bda904bcb993f3771f7b2dbd40f06fdcbe910271ac/b2sdk-2.12.0.tar.gz", hash = "sha256:da7b65e1af4f59c7de7d079c1e25de6b033aa45090fded4caefe52ded9b13ee6", size = 209696, upload-time = "2026-05-05T15:42:16.04Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/aa/06/ba5d1fa6170651197fe1eed9d70884517f4df6f264a4647f23e61bb21b46/b2sdk-2.12.0-py3-none-any.whl", hash = "sha256:58af4e925b2ed0422b4f2f26ee3f53c7045520ae6ddcbe65b5bc9e4b99725bce", size = 300909, upload-time = "2026-05-05T15:42:14.574Z" },
+]
+
+[[package]]
+name = "boto3"
+version = "1.43.36"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/9f/897287e955db0f50b12fd69ef45956e4fd2c7ddb48c736872f7ea2314443/boto3-1.43.36.tar.gz", hash = "sha256:587d7ee92a12e440ad12b0e7f11f3358f0c4d65b19f64726efc94aaf194aff28", size = 112690, upload-time = "2026-06-23T02:47:14.561Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/f1/274303f52483ecf199eae6f8d9b6f5951670397ee4d72c06cfd4eb644612/boto3-1.43.36-py3-none-any.whl", hash = "sha256:42942dde254673abcbc9e6e60017c88341a4f49d99d24e1f2e290fb38138c26f", size = 140031, upload-time = "2026-06-23T02:47:13.178Z" },
+]
+
+[[package]]
+name = "botocore"
+version = "1.43.36"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "python-dateutil" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/37/da9e7f6ca73ac73afd7f0bb7f238aa5daba35c081e98d7f48a7c399599c0/botocore-1.43.36.tar.gz", hash = "sha256:4cae47d1b2d426316b85a0087d9e69e048f13bc003b5177d74639fe9dfd28205", size = 15625488, upload-time = "2026-06-23T02:47:03.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/19/934f81592527a3f7f9b943c893e334c721a4644948642bc33885d584e9ec/botocore-1.43.36-py3-none-any.whl", hash = "sha256:3c65fdc39ed01d8dfde1e961b34038aed03c459f8ddf80717a12ac006475e49d", size = 15313630, upload-time = "2026-06-23T02:46:59.327Z" },
 ]
 
 [[package]]
@@ -584,6 +613,47 @@ http = [
 ]
 
 [[package]]
+name = "genblaze"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "genblaze-core" },
+    { name = "genblaze-s3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8e/cc/966a934f5d17d19cb54bbe122ceb19ef6d1d02928a59b1390fc0db48cb17/genblaze-0.4.1.tar.gz", hash = "sha256:01d1ea019224c55a79e49797cb657af1de60d1f354775e0452ce9d226a012797", size = 5156, upload-time = "2026-06-25T18:16:08.07Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/96/7d5f78fba9aae5524a30442f4c0c6e8abba5ff6856af01cad2672ffcaf35/genblaze-0.4.1-py3-none-any.whl", hash = "sha256:e6db44a0571da1792414bc7350e328c71fde5f67bd2b7b830bb55b0a5fd07362", size = 4076, upload-time = "2026-06-25T18:16:06.878Z" },
+]
+
+[[package]]
+name = "genblaze-core"
+version = "0.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/43/e6e012f1660c98fa25a630284b980b9fecdf71ec33401ad9bcbf9f970f86/genblaze_core-0.3.4.tar.gz", hash = "sha256:fb2be7ccdfaf9dad60954b8878f0a516221dce3b73c9e6d068a5ddee9ab42673", size = 384287, upload-time = "2026-06-25T17:52:51.201Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/3c/67a9b9051b819e7e0c23f0f70dac9a16af39a8f9ec06f88fa4b36fe3c6a9/genblaze_core-0.3.4-py3-none-any.whl", hash = "sha256:7b71fce2c9a7dbb135f37019b7e19c4bafa0441c551ddffced067118b7b03bc4", size = 258710, upload-time = "2026-06-25T17:52:49.65Z" },
+]
+
+[[package]]
+name = "genblaze-s3"
+version = "0.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "genblaze-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/87/b0/e2cde56a396ee1d5a1a01e4388e20b25dffaaeb4df87afac74be9d9b6109/genblaze_s3-0.3.4.tar.gz", hash = "sha256:440fe4ae0d190f8334c21ba88fab502d41ddc764cf1cba6bdc94d676f7e9338d", size = 75288, upload-time = "2026-06-25T17:53:29.188Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/28/6ac0a1ec4d123ff60d1bbf36496351b25ee48ad11bb605b68b01cec8559e/genblaze_s3-0.3.4-py3-none-any.whl", hash = "sha256:54d6fa8399bec66d2d7a277bdd89dcc768b970c74787462d5e3e76d35177271c", size = 43434, upload-time = "2026-06-25T17:53:27.83Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -677,6 +747,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
+]
+
+[[package]]
+name = "jmespath"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/59/322338183ecda247fb5d1763a6cbe46eff7222eaeebafd9fa65d4bf5cb11/jmespath-1.1.0.tar.gz", hash = "sha256:472c87d80f36026ae83c6ddd0f1d05d4e510134ed462851fd5f754c8c3cbb88d", size = 27377, upload-time = "2026-01-22T16:35:26.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl", hash = "sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64", size = 20419, upload-time = "2026-01-22T16:35:24.919Z" },
 ]
 
 [[package]]
@@ -1463,6 +1542,18 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dateutil"
+version = "2.9.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1647,6 +1738,30 @@ requires-dist = [
 ]
 
 [[package]]
+name = "rooted-worker"
+version = "0.1.0"
+source = { editable = "worker" }
+dependencies = [
+    { name = "pillow" },
+    { name = "rooted-provenance" },
+    { name = "rooted-storage" },
+]
+
+[package.optional-dependencies]
+genblaze = [
+    { name = "genblaze" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "genblaze", marker = "extra == 'genblaze'", specifier = ">=0.3" },
+    { name = "pillow", specifier = ">=10.0" },
+    { name = "rooted-provenance", editable = "packages/provenance" },
+    { name = "rooted-storage", editable = "packages/storage" },
+]
+provides-extras = ["genblaze"]
+
+[[package]]
 name = "ruff"
 version = "0.15.20"
 source = { registry = "https://pypi.org/simple" }
@@ -1669,6 +1784,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/10/9b/5f14927848d2fd4aa891fd88d883788c5a7baba561c7874732364045708c/ruff-0.15.20-py3-none-win32.whl", hash = "sha256:ed65ef510e43a137207e0f01cfcf998aeddb1aeeda5c9d35023e910284d7cf21", size = 10857322, upload-time = "2026-06-25T17:20:28.612Z" },
     { url = "https://files.pythonhosted.org/packages/fa/f0/fe47c501f9dea92a26d788ff98bb5d92ed4cb4c88792c5c88af6b697dc8e/ruff-0.15.20-py3-none-win_amd64.whl", hash = "sha256:a525c81c70fb0380344dd1d8745d8cc1c890b7fc94a58d5a07bd8eb9557b8415", size = 11993274, upload-time = "2026-06-25T17:20:31.871Z" },
     { url = "https://files.pythonhosted.org/packages/d7/2b/9555445e1201d92b3195f45cdb153a0b68f24e0a4273f6e3d5ab46e212bb/ruff-0.15.20-py3-none-win_arm64.whl", hash = "sha256:2f5b2a6d614e8700388806a14996c40fab2c47b819ef57d790a34878858ed9ca", size = 11343498, upload-time = "2026-06-25T17:20:35.03Z" },
+]
+
+[[package]]
+name = "s3transfer"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/94/dcdaeb1713cab9c84def276cfac7388b17c7d9855bbcfe88d77e4dbafd44/s3transfer-0.19.0.tar.gz", hash = "sha256:ce436931687addc4c1712d52d40b32f53e88315723f107ffa20ba82b05a0f685", size = 165171, upload-time = "2026-06-16T19:44:51.599Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/5f/4c174edad94f82de888ac00a5ddd8d07b35609b6c94f0bdf4d74af57703e/s3transfer-0.19.0-py3-none-any.whl", hash = "sha256:777cc2415536f1debadb5c2ef7779275d0fc0fe0e042411cdd6caebeb2685262", size = 90101, upload-time = "2026-06-16T19:44:50.439Z" },
 ]
 
 [[package]]

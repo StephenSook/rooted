@@ -15,6 +15,7 @@ point it at an in-process app with no network and no credentials.
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 from typing import Any
 
@@ -91,22 +92,59 @@ def _first_match(result: dict[str, Any]) -> dict[str, Any] | None:
     return matches[0] if matches else None
 
 
+class SbrInputError(Exception):
+    """A tool input was malformed (e.g. invalid base64), so the tool returns a structured error
+    instead of crashing on untrusted agent-supplied input."""
+
+
+def _decode_image(image_base64: str) -> bytes:
+    try:
+        return base64.b64decode(image_base64, validate=True)
+    except binascii.Error as exc:
+        raise SbrInputError("image_base64 is not valid base64") from exc
+
+
+def _input_error(status_code: int) -> dict[str, Any]:
+    # Map an upstream 4xx (bad input, e.g. 415 non-image) to a clean not-recovered result. A 5xx is
+    # re-raised by the caller so an outage never masquerades as a confident "no provenance".
+    return {
+        "recovered": False,
+        "reason": "invalid or unsupported image",
+        "upstream_status": status_code,
+    }
+
+
 @mcp.tool
 async def verify_asset(image_base64: str) -> dict[str, Any]:
     """Verify a possibly-stripped image. Recover its manifest through the SBR server and report
     whether provenance was found, by which recovery method, and the disclosed system provenance."""
     client = _client_or_default()
-    match = _first_match(await client.matches_by_content(base64.b64decode(image_base64)))
+    try:
+        result = await client.matches_by_content(_decode_image(image_base64))
+    except SbrInputError as exc:
+        return {"recovered": False, "error": str(exc)}
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code < 500:
+            return _input_error(exc.response.status_code)
+        raise  # upstream 5xx: fail loud, never report a false "no provenance"
+    match = _first_match(result)
     if match is None:
         return {"recovered": False, "reason": "no soft-binding match"}
     manifest = await client.manifest(match["manifest_id"])
+    if manifest is None:
+        # A match without a retrievable manifest is an inconsistent state, not a recovery.
+        return {
+            "recovered": False,
+            "reason": "match without manifest",
+            "manifest_id": match["manifest_id"],
+        }
     score = match.get("similarity_score")
     return {
         "recovered": True,
         "manifest_id": match["manifest_id"],
         "recovery_method": "fingerprint" if score is not None else "watermark",
         "similarity_score": score,
-        "system_provenance": (manifest or {}).get("system_provenance", {}),
+        "system_provenance": manifest.get("system_provenance", {}),
     }
 
 
@@ -119,33 +157,36 @@ async def recover_manifest(
     """Recover the signed provenance manifest for an asset, by content (image_base64) or by soft
     binding (alg + value). Personal provenance is withheld by the server's redaction layer."""
     client = _client_or_default()
-    if image_base64 is not None:
-        result = await client.matches_by_content(base64.b64decode(image_base64))
-    elif alg is not None and value is not None:
-        result = await client.matches_by_binding(alg, value)
-    else:
-        return {"error": "provide image_base64, or both alg and value"}
+    try:
+        if image_base64 is not None:
+            result = await client.matches_by_content(_decode_image(image_base64))
+        elif alg is not None and value is not None:
+            result = await client.matches_by_binding(alg, value)
+        else:
+            return {"recovered": False, "error": "provide image_base64, or both alg and value"}
+    except SbrInputError as exc:
+        return {"recovered": False, "error": str(exc)}
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code < 500:
+            return _input_error(exc.response.status_code)
+        raise  # upstream 5xx: fail loud, never report a false "no provenance"
     match = _first_match(result)
     if match is None:
-        return {"recovered": False}
+        return {"recovered": False, "reason": "no soft-binding match"}
     manifest = await client.manifest(match["manifest_id"])
     return {"recovered": manifest is not None, "manifest": manifest}
 
 
 @mcp.tool
 async def query_transparency_log(manifest_id: str) -> dict[str, Any]:
-    """Audit the Merkle transparency log for a manifest: return the signed checkpoint (tree head)
-    and the inclusion proof that the manifest's leaf is committed under that head."""
+    """Audit the Merkle transparency log for a manifest: return the inclusion proof, which is pinned
+    to and carries the signed checkpoint, so the leaf is bound to a signed tree head the caller can
+    verify independently (resolve the proof to a root and check it equals the signed root)."""
     client = _client_or_default()
     proof = await client.proof(manifest_id)
     if proof is None:
         return {"included": False, "manifest_id": manifest_id}
-    return {
-        "included": True,
-        "manifest_id": manifest_id,
-        "inclusion_proof": proof,
-        "checkpoint": await client.checkpoint(),
-    }
+    return {"included": True, "manifest_id": manifest_id, "inclusion_proof": proof}
 
 
 def main() -> None:

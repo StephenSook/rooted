@@ -11,6 +11,7 @@ from rooted_storage.storage import (
     asset_key,
     checkpoint_key,
     manifest_key,
+    signature_key,
 )
 
 
@@ -55,4 +56,5 @@ def test_key_helpers_are_content_addressable() -> None:
     sha = "ab" + "c" * 62
     assert asset_key(sha) == f"assets/ab/cc/{sha}"
     assert manifest_key("urn:c2pa:abc-123") == "manifests/urn_c2pa_abc-123.json"
+    assert signature_key("urn:c2pa:abc-123") == "signatures/urn_c2pa_abc-123.cose"
     assert checkpoint_key(1) == "merkle/checkpoints/epoch_00000001.cbor"

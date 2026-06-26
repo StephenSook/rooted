@@ -21,6 +21,7 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import (
@@ -171,7 +172,9 @@ async def ingest(
     manifest id is not overwritten.
     """
     resolver = get_resolver()
-    if resolver.get_manifest(manifest_id) is not None:
+    # The index calls are synchronous (psycopg); offload them so a DB round-trip never blocks the
+    # event loop and serializes concurrent requests.
+    if await run_in_threadpool(resolver.get_manifest, manifest_id) is not None:
         raise HTTPException(status_code=409, detail="manifest id already exists")
     data = await file.read()
     image = _decode_image(data)
@@ -182,7 +185,7 @@ async def ingest(
         system_provenance={"model": model},
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
-    resolver.register(manifest, image, watermark_id)
+    await run_in_threadpool(resolver.register, manifest, image, watermark_id)
     _leaf_index[manifest_id] = _log.append(manifest.canonical_hash())
     return {"manifestId": manifest_id}
 
@@ -198,12 +201,13 @@ async def ingest(
 )
 async def matches_by_content(file: UploadFile = File(...)) -> SoftBindingQueryResult:
     image = await _read_image(file)
-    return get_resolver().resolve_by_content(image)
+    # resolve_by_content does blocking DB work and CPU-bound PDQ; offload it off the event loop.
+    return await run_in_threadpool(get_resolver().resolve_by_content, image)
 
 
 @router.get("/matches/byBinding", response_model=SoftBindingQueryResult)
 async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
-    return get_resolver().resolve_by_binding(alg, value)
+    return await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
 
 
 @router.get(
@@ -212,7 +216,7 @@ async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     responses={404: {"description": "manifest not found"}},
 )
 async def get_manifest(manifest_id: str) -> Manifest:
-    manifest = get_resolver().get_manifest(manifest_id)
+    manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
     if manifest is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     return manifest.redacted()  # SB 942 split: withhold personal provenance on read

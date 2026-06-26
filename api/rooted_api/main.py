@@ -1,17 +1,29 @@
 """FastAPI application entry point for the Rooted SBR API.
 
-The C2PA v2.4 Soft Binding Resolution routes (/matches/byBinding, /matches/byContent,
-/manifests, /bindings, /services/supportedAlgorithms) are added in later phases. For now this
-exposes a liveness probe so the deploy target and CI have a real, testable surface.
+Exposes the C2PA v2.4 Soft Binding Resolution routes (mounted from rooted_api.sbr) plus a liveness
+probe. The resolver (and its Postgres connection pool, when DATABASE_URL is set) is built and
+validated at startup via the lifespan, so a misconfigured database fails the deploy loudly instead
+of 500ing on the first user request.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
+from rooted_api.sbr import get_resolver
 from rooted_api.sbr import router as sbr_router
 
-app = FastAPI(title="Rooted SBR API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    get_resolver()  # build + validate the resolver and its DB pool now, not on first request
+    yield
+
+
+app = FastAPI(title="Rooted SBR API", version="0.1.0", lifespan=lifespan)
 app.include_router(sbr_router)
 
 

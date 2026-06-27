@@ -21,6 +21,7 @@
     "next": "15.5.19",
     "openapi-fetch": "^0.17.0",
     "openapi-react-query": "^0.5.4",
+    "r3f-forcegraph": "^1.1.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "three": "0.185.0",

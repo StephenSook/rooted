@@ -1,14 +1,23 @@
-# Render Blueprint for the Rooted SBR API. The front end deploys to Vercel separately.
-# The demo runs fully in-memory (no Postgres/Redis/B2), so this needs no credentials: the seeded
-# demo asset makes the live site show a real VERIFIED recovery.
+# Render Blueprint for the Rooted SBR API (matches the live service). The front end deploys to Vercel.
+# The demo runs fully in-memory (no Postgres/Redis/B2/provider keys), so this needs no credentials:
+# the seeded demo asset makes the live site show a real VERIFIED recovery.
+#
+# Native Python runtime + uv (NOT Docker): this is what actually runs at
+# https://rooted-api-ubvc.onrender.com. (The Render API/MCP cannot create Docker services, so the
+# native runtime is the deploy path; there is no Dockerfile.)
 services:
   - type: web
     name: rooted-api
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: python
     plan: starter # paid, always-on, so judges never hit a cold start
-    healthCheckPath: /health
+    region: virginia
+    branch: main
     autoDeploy: true
+    healthCheckPath: /health
+    buildCommand: pip install uv && uv sync --locked --package rooted-api --no-dev
+    startCommand: .venv/bin/uvicorn rooted_api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ROOTED_DEMO_SEED
         value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.7"

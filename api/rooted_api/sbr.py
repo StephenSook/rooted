@@ -36,7 +36,7 @@ from rooted_provenance.models import (
 )
 from rooted_provenance.resolver import Index, InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, load_private_key, public_key_bytes
-from rooted_provenance.watermark import FakeWatermarker
+from rooted_provenance.watermark import FakeWatermarker, Watermarker
 
 router = APIRouter()
 
@@ -99,6 +99,21 @@ def _psycopg_url(url: str) -> str:
     return url
 
 
+def _make_watermarker() -> Watermarker:
+    """The recovery watermarker. Defaults to the fake, so recovery runs on the PDQ path and the
+    deploy stays lean. Set ROOTED_REAL_WATERMARK=1 (and install the `watermark` extra) to use the
+    real TrustMark variant P; that import pulls torch, so it is opt-in. If the extra is missing we
+    fall back to the fake rather than failing the resolver."""
+    if os.environ.get("ROOTED_REAL_WATERMARK") == "1":
+        try:
+            from rooted_provenance.watermark import TrustMarkWatermarker
+
+            return TrustMarkWatermarker()  # __init__ imports trustmark -> ImportError if absent
+        except ImportError:
+            pass
+    return FakeWatermarker()
+
+
 def _make_resolver() -> Resolver:
     """Build the resolver. DATABASE_URL selects the Postgres index (live recovery on Postgres);
     without it the in-memory index keeps the demo credential-free."""
@@ -110,7 +125,7 @@ def _make_resolver() -> Resolver:
         pg = PostgresIndex(_psycopg_url(url))
         pg.create_schema()
         index = pg
-    return Resolver(index, FakeWatermarker())
+    return Resolver(index, _make_watermarker())
 
 
 # Locks for the lazy singletons: routes run in a threadpool (run_in_threadpool), so two concurrent

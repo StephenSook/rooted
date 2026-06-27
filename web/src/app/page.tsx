@@ -1,3 +1,4 @@
+import { RecoverPanel } from "@/components/recover-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
 
 export default function Home() {
@@ -16,10 +17,12 @@ export default function Home() {
         </p>
       </header>
 
+      <RecoverPanel />
+
       <SupportedAlgorithms />
 
       <p className="font-mono text-xs text-white/30">
-        Foundation: Next 15, React 19, Tailwind v4, typed against the FastAPI SBR API.
+        Next 15, React 19, Tailwind v4, R3F, typed against the FastAPI SBR API.
       </p>
     </main>
   );

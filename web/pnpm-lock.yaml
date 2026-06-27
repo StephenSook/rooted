@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@contentauth/c2pa-web':
+        specifier: 0.12.0
+        version: 0.12.0
       '@react-three/drei':
         specifier: 10.7.7
         version: 10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.17)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(three@0.185.0))(@types/react@19.2.17)(@types/three@0.185.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(three@0.185.0)
@@ -105,6 +108,15 @@ packages:
   '@babel/runtime@7.29.7':
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
+
+  '@contentauth/c2pa-types@0.7.0':
+    resolution: {integrity: sha512-nbrV6dGweGw2sPhLLFmI3i9xLFYmsfgpqIvNxXGrdhxtryQfjdETHIijRSDdi1n84YDNrd36JFt7CPzsjIPCQw==}
+
+  '@contentauth/c2pa-wasm@0.9.0':
+    resolution: {integrity: sha512-9ZbHF+Epgd3yhK++u9zr7lPp4vzRGUL5JI220I8Tjt4jbiaxHDukUS2BiONla9sOuNn1bnHyRNySHgqn0Kwmew==}
+
+  '@contentauth/c2pa-web@0.12.0':
+    resolution: {integrity: sha512-auvtiQLURI7MDbDTd3ZvWQR/97uxdmhnrJVT+NSphqTMyalmXl9OOIdf2jPIE2FrTqardS2O5OFlHlFBFqNPCA==}
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
@@ -1447,6 +1459,9 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
+  highgain@0.1.0:
+    resolution: {integrity: sha512-Vw/g2upw4MYLZ9e95k79+idMoPFEKvTQVTce9LCDfI+T6AiG+SdiR4WDKszB1grQy0O+uhxd6cqbdi3VhECdbA==}
+
   hls.js@1.6.16:
     resolution: {integrity: sha512-VSIRpLfRwlAAdGL4wiTucx2ScRipo0ed1FBatWkyt832jC4CReKstga6yIhYVwGu9LOBjuX9wzmRMeQdBJtzEA==}
 
@@ -2310,6 +2325,10 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
+  ts-deepmerge@7.0.3:
+    resolution: {integrity: sha512-Du/ZW2RfwV/D4cmA5rXafYjBQVuvu4qGiEEla4EmEHVHgRdx68Gftx7i66jn2bzHPwSVZY36Ae6OuDn9el4ZKA==}
+    engines: {node: '>=14.13.1'}
+
   tsconfig-paths@3.15.0:
     resolution: {integrity: sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==}
 
@@ -2461,6 +2480,17 @@ snapshots:
   '@babel/helper-validator-identifier@7.29.7': {}
 
   '@babel/runtime@7.29.7': {}
+
+  '@contentauth/c2pa-types@0.7.0': {}
+
+  '@contentauth/c2pa-wasm@0.9.0': {}
+
+  '@contentauth/c2pa-web@0.12.0':
+    dependencies:
+      '@contentauth/c2pa-types': 0.7.0
+      '@contentauth/c2pa-wasm': 0.9.0
+      highgain: 0.1.0
+      ts-deepmerge: 7.0.3
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
@@ -3885,6 +3915,8 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  highgain@0.1.0: {}
+
   hls.js@1.6.16: {}
 
   https-proxy-agent@7.0.6(supports-color@10.2.2):
@@ -4772,6 +4804,8 @@ snapshots:
   ts-api-utils@2.5.0(typescript@5.9.3):
     dependencies:
       typescript: 5.9.3
+
+  ts-deepmerge@7.0.3: {}
 
   tsconfig-paths@3.15.0:
     dependencies:

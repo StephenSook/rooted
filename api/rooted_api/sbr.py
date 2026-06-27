@@ -37,6 +37,7 @@ from rooted_provenance.models import (
 from rooted_provenance.resolver import Index, InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, load_private_key, public_key_bytes
 from rooted_provenance.watermark import FakeWatermarker, Watermarker
+from rooted_storage.storage import Storage
 
 router = APIRouter()
 
@@ -175,6 +176,42 @@ def set_log(log: TransparencyLog | None) -> None:
     """Override the transparency log, or reset to None to rebuild on next use (tests)."""
     global _log
     _log = log
+
+
+# The B2 object store. When the B2 credentials are present (B2_KEY_ID, B2_APP_KEY, B2_BUCKET_DEV),
+# Rooted stores assets, manifests, and signatures content-addressably on Backblaze B2; without them
+# the demo runs in-memory and never touches B2. Built lazily, overridable for tests (set_storage).
+_storage: Storage | None = None
+_storage_built = False
+_storage_lock = threading.Lock()
+
+
+def _make_storage() -> Storage | None:
+    key_id = os.environ.get("B2_KEY_ID")
+    app_key = os.environ.get("B2_APP_KEY")
+    bucket = os.environ.get("B2_BUCKET_DEV")
+    if not (key_id and app_key and bucket):
+        return None
+    from rooted_storage.storage import B2Storage
+
+    return B2Storage(key_id, app_key, bucket)
+
+
+def get_storage() -> Storage | None:
+    global _storage, _storage_built
+    if not _storage_built:
+        with _storage_lock:
+            if not _storage_built:
+                _storage = _make_storage()
+                _storage_built = True
+    return _storage
+
+
+def set_storage(storage: Storage | None) -> None:
+    """Override the object store (tests). Marks it built so get_storage returns it as-is."""
+    global _storage, _storage_built
+    _storage = storage
+    _storage_built = True
 
 
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # cap on an uploaded asset

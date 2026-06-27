@@ -16,7 +16,7 @@ from fastapi import FastAPI
 
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_demo
-from rooted_api.sbr import get_log, get_resolver
+from rooted_api.sbr import get_log, get_resolver, get_storage
 from rooted_api.sbr import router as sbr_router
 
 
@@ -27,9 +27,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     get_resolver()
     get_log()
     # Seed the credential-free demo asset when asked (ROOTED_DEMO_SEED=1), so a live deploy with no
-    # provider key still shows a real VERIFIED recovery. Idempotent.
+    # provider key still shows a real VERIFIED recovery. When B2 is configured, the seed also writes
+    # the asset/manifest/signature to B2, so the live demo exercises B2 for real. Idempotent.
     if os.environ.get("ROOTED_DEMO_SEED") == "1":
-        seed_demo(get_resolver(), get_log())
+        seed_demo(get_resolver(), get_log(), get_storage())
     try:
         yield
     finally:

@@ -1,7 +1,8 @@
 import { ContentCredentials } from "@/components/content-credentials";
-import { MerkleExplorer } from "@/components/three/merkle-explorer";
 import { RecoverPanel } from "@/components/recover-panel";
+import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
+import { MerkleExplorer } from "@/components/three/merkle-explorer";
 
 export default function Home() {
   return (
@@ -22,6 +23,8 @@ export default function Home() {
       <RecoverPanel />
 
       <ContentCredentials />
+
+      <StoragePanel />
 
       <MerkleExplorer />
 

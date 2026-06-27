@@ -55,7 +55,7 @@ provenance, recover manifests, and audit the transparency log conversationally.
 /packages
   /provenance trust core: models + canonical hashing, Ed25519/COSE, c2pa-python claim, PDQ, Merkle log
   /storage    Backblaze B2 (b2sdk), PostgresIndex (pgvector-free bit(256) Hamming), transparency store
-/web          Next.js 15 front end (in progress)
+/web          Next.js 15 front end: R3F galaxy, recovery reveal, C2PA display, 3D Merkle explorer
 ```
 
 ## Status (what is wired today, honestly)
@@ -67,8 +67,9 @@ provenance, recover manifests, and audit the transparency log conversationally.
 | FastMCP product server (three curated tools) | wired, tested |
 | PostgresIndex (pooled + self-healing, atomic ingest) selected by `DATABASE_URL` | wired, real-Postgres tested via pgserver |
 | Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired; provider-verified to the API boundary; a real image needs a funded provider account |
-| TrustMark variant P watermark | behind the optional `watermark` extra; recovery also works via the PDQ fallback |
-| Front end, audio/video modalities, Render/Vercel deploy | in progress / not yet wired |
+| TrustMark variant P watermark | wired + verified behind the `watermark` extra; opt-in in the API resolver (`ROOTED_REAL_WATERMARK`); recovery also works via the PDQ fallback |
+| Front end (Next 15, R3F, typed openapi client) + Render/Vercel deploy | wired + live at the URLs above (deploy runs the in-memory demo, credential-free) |
+| Audio/video modalities | not yet wired |
 
 Numbers in any submission are taken from the actual test suite, never copied from draft prose.
 

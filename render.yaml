@@ -1,0 +1,14 @@
+# Render Blueprint for the Rooted SBR API. The front end deploys to Vercel separately.
+# The demo runs fully in-memory (no Postgres/Redis/B2), so this needs no credentials: the seeded
+# demo asset makes the live site show a real VERIFIED recovery.
+services:
+  - type: web
+    name: rooted-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # paid, always-on, so judges never hit a cold start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ROOTED_DEMO_SEED
+        value: "1"

@@ -1,0 +1,21 @@
+# Keep the API image lean: the front end, deps, caches, and local-only dirs are not needed.
+web/
+**/node_modules
+.venv/
+.git/
+.github/
+research/
+docs/
+.next/
+out/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.playwright-mcp/
+*.log
+.env
+.env.*
+!.env.example

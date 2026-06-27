@@ -95,6 +95,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transparency/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Transparency Log
+         * @description The append-ordered log leaves plus the current root. A transparency log is meant to be
+         *     auditable, so the entries are public; this also feeds the Merkle explorer.
+         */
+        get: operations["transparency_log_transparency_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/transparency/checkpoint": {
         parameters: {
             query?: never;
@@ -238,6 +259,30 @@ export interface components {
             keySource: string;
             /** Serververified */
             serverVerified: boolean;
+        };
+        /**
+         * LogEntry
+         * @description One append-ordered transparency-log leaf.
+         */
+        LogEntry: {
+            /** Leafindex */
+            leafIndex: number;
+            /** Manifestid */
+            manifestId: string;
+            /** Leafhash */
+            leafHash: string;
+        };
+        /**
+         * LogResponse
+         * @description The ordered transparency-log leaves with the current tree head, for auditing and display.
+         */
+        LogResponse: {
+            /** Entries */
+            entries: components["schemas"]["LogEntry"][];
+            /** Treesize */
+            treeSize: number;
+            /** Roothash */
+            rootHash: string;
         };
         /**
          * Manifest
@@ -550,6 +595,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transparency_log_transparency_log_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogResponse"];
                 };
             };
         };

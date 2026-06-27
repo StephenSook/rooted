@@ -30,10 +30,16 @@ router = APIRouter()
 _sample_png: bytes | None = None
 
 
-def _demo_image(size: int = 256) -> Image.Image:
+_PRIMARY_SEED = 7
+# Extra fixtures so the transparency log (and the Merkle explorer) has real structure, not one leaf.
+_EXTRA_SEEDS = (11, 13, 17, 19, 23, 29)
+DEMO_ENTRY_COUNT = 1 + len(_EXTRA_SEEDS)
+
+
+def _demo_image(seed: int, size: int = 256) -> Image.Image:
     """A smooth gradient + soft blobs + mild texture: natural-frequency content that yields a
     stable, high-quality PDQ hash, so the served image self-matches the registered fingerprint."""
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(seed)
     ramp = np.linspace(0, 255, size)
     img = np.stack(
         [np.tile(ramp, (size, 1)), np.tile(ramp[:, None], (1, size)), np.full((size, size), 128.0)],
@@ -50,30 +56,40 @@ def _demo_image(size: int = 256) -> Image.Image:
 
 
 def demo_sample_png() -> bytes:
-    """The demo asset's exact PNG bytes (deterministic), cached and regenerable after a restart."""
+    """The primary demo asset's exact PNG bytes (deterministic), cached, regenerable on restart."""
     global _sample_png
     if _sample_png is None:
         buf = io.BytesIO()
-        _demo_image().save(buf, "PNG")
+        _demo_image(_PRIMARY_SEED).save(buf, "PNG")
         _sample_png = buf.getvalue()
     return _sample_png
 
 
-def seed_demo(resolver: Resolver, log: TransparencyLog) -> None:
-    """Register the demo asset for recovery. Idempotent: a no-op if it is already present."""
-    if resolver.get_manifest(DEMO_MANIFEST_ID) is not None:
-        return
-    png = demo_sample_png()
-    image = Image.open(io.BytesIO(png))
+def _register(
+    resolver: Resolver, log: TransparencyLog, manifest_id: str, watermark_id: str, png: bytes
+) -> None:
     manifest = Manifest(
-        manifest_id=DEMO_MANIFEST_ID,
+        manifest_id=manifest_id,
         asset_sha256=hashlib.sha256(png).hexdigest(),
         created_at=_CREATED_AT,
         system_provenance={"model": "rooted-demo-fixture", "note": "seeded demo asset"},
-        soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=DEMO_WATERMARK_ID)],
+        soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
-    resolver.register(manifest, image, DEMO_WATERMARK_ID)
+    resolver.register(manifest, Image.open(io.BytesIO(png)), watermark_id)
     log.append(manifest.manifest_id, manifest.canonical_hash())
+
+
+def seed_demo(resolver: Resolver, log: TransparencyLog) -> None:
+    """Register the demo assets for recovery: the primary (served at /demo/sample and recovered by
+    the UI) plus a few extra fixtures so the log has structure. Idempotent if already seeded."""
+    if resolver.get_manifest(DEMO_MANIFEST_ID) is not None:
+        return
+    _register(resolver, log, DEMO_MANIFEST_ID, DEMO_WATERMARK_ID, demo_sample_png())
+    for i, seed in enumerate(_EXTRA_SEEDS):
+        buf = io.BytesIO()
+        _demo_image(seed).save(buf, "PNG")
+        mid = f"urn:c2pa:demo-{i:04d}-0000-0000-0000-000000000002"
+        _register(resolver, log, mid, f"DX{i:02d}", buf.getvalue())
 
 
 # include_in_schema=False: this is a demo aid, not part of the spec-defined SBR contract, so it

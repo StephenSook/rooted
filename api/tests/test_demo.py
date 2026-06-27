@@ -10,7 +10,7 @@ from httpx import ASGITransport
 from PIL import Image
 
 from rooted_api import sbr
-from rooted_api.demo import DEMO_MANIFEST_ID, demo_sample_png, seed_demo
+from rooted_api.demo import DEMO_ENTRY_COUNT, DEMO_MANIFEST_ID, demo_sample_png, seed_demo
 from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
@@ -37,6 +37,34 @@ def test_seed_is_idempotent() -> None:
     )  # a second call (e.g. a restart against a persistent backend) is a no-op
     result = resolver.resolve_by_content(Image.open(io.BytesIO(demo_sample_png())))
     assert len(result.matches) == 1
+    assert log.size == DEMO_ENTRY_COUNT  # seeded once, not twice
+
+
+def test_seed_populates_the_log() -> None:
+    resolver, log = _fresh()
+    seed_demo(resolver, log)
+    entries = log.entries()
+    assert len(entries) == DEMO_ENTRY_COUNT
+    assert entries[0] == (0, DEMO_MANIFEST_ID, entries[0][2])  # primary is the first leaf
+
+
+async def test_transparency_log_route() -> None:
+    resolver, log = _fresh()
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    seed_demo(resolver, log)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.get("/transparency/log")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["treeSize"] == DEMO_ENTRY_COUNT
+            assert len(body["entries"]) == DEMO_ENTRY_COUNT
+            assert body["entries"][0]["manifestId"] == DEMO_MANIFEST_ID
+            assert len(body["rootHash"]) == 64  # sha256 hex
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
 
 
 async def test_demo_sample_route_then_recover() -> None:

@@ -78,6 +78,11 @@ class TransparencyLog:
     def index_for(self, manifest_id: str) -> int | None:
         return self._index.get(manifest_id)
 
+    def entries(self) -> list[tuple[int, str, str]]:
+        """The ordered log entries as (leaf_index, manifest_id, leaf_hash). A transparency log is
+        meant to be auditable, so exposing the append-ordered leaves is by design."""
+        return [(i, mid, leaf_hash) for i, (mid, leaf_hash) in enumerate(self._store.all())]
+
     def close(self) -> None:
         """Release the leaf store's resources (e.g. a Postgres pool); a no-op for in-memory."""
         close = getattr(self._store, "close", None)

@@ -291,6 +291,38 @@ class InclusionProofResponse(CamelModel):
     server_verified: bool
 
 
+class LogEntry(CamelModel):
+    """One append-ordered transparency-log leaf."""
+
+    leaf_index: int
+    manifest_id: str
+    leaf_hash: str
+
+
+class LogResponse(CamelModel):
+    """The ordered transparency-log leaves with the current tree head, for auditing and display."""
+
+    entries: list[LogEntry]
+    tree_size: int
+    root_hash: str
+
+
+@router.get("/transparency/log", response_model=LogResponse)
+async def transparency_log() -> LogResponse:
+    """The append-ordered log leaves plus the current root. A transparency log is meant to be
+    auditable, so the entries are public; this also feeds the Merkle explorer."""
+    log = get_log()
+    # One snapshot: read the entries and the matching root with no await in between.
+    rows = await run_in_threadpool(log.entries)
+    size = log.size
+    root = log.root(size)
+    return LogResponse(
+        entries=[LogEntry(leaf_index=i, manifest_id=m, leaf_hash=h) for i, m, h in rows],
+        tree_size=size,
+        root_hash=root.hex(),
+    )
+
+
 @router.get("/transparency/checkpoint", response_model=CheckpointResponse)
 async def transparency_checkpoint() -> CheckpointResponse:
     """The current signed tree head. Idempotent: the epoch is the tree size, so re-reading an

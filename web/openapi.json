@@ -215,6 +215,25 @@
         }
       }
     },
+    "/transparency/log": {
+      "get": {
+        "summary": "Transparency Log",
+        "description": "The append-ordered log leaves plus the current root. A transparency log is meant to be\nauditable, so the entries are public; this also feeds the Merkle explorer.",
+        "operationId": "transparency_log_transparency_log_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/transparency/checkpoint": {
       "get": {
         "summary": "Transparency Checkpoint",
@@ -454,6 +473,57 @@
         ],
         "title": "InclusionProofResponse",
         "description": "A self-contained, independently-verifiable inclusion proof.\n\nThe client resolves the serialized proof to a root and confirms that root equals the embedded\nsigned checkpoint's root_hash, then verifies the checkpoint signature against public_key_hex.\nserver_verified is only the server's own check and is not a substitute for that client-side\nverification. leaf_hash is the manifest's canonical hash (the leaf), unchanged by redaction."
+      },
+      "LogEntry": {
+        "properties": {
+          "leafIndex": {
+            "type": "integer",
+            "title": "Leafindex"
+          },
+          "manifestId": {
+            "type": "string",
+            "title": "Manifestid"
+          },
+          "leafHash": {
+            "type": "string",
+            "title": "Leafhash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "leafIndex",
+          "manifestId",
+          "leafHash"
+        ],
+        "title": "LogEntry",
+        "description": "One append-ordered transparency-log leaf."
+      },
+      "LogResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LogEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "treeSize": {
+            "type": "integer",
+            "title": "Treesize"
+          },
+          "rootHash": {
+            "type": "string",
+            "title": "Roothash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries",
+          "treeSize",
+          "rootHash"
+        ],
+        "title": "LogResponse",
+        "description": "The ordered transparency-log leaves with the current tree head, for auditing and display."
       },
       "Manifest": {
         "properties": {

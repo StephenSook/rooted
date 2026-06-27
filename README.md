@@ -7,6 +7,17 @@ re-encode), Rooted recovers the full provenance by matching an invisible waterma
 perceptual-hash fingerprint against manifests stored in B2, and returns the recovered, signed
 manifest with a tamper-evident transparency-log proof.
 
+## Live demo
+
+- Web: https://rooted-web-phi.vercel.app
+- API: https://rooted-api-ubvc.onrender.com
+
+Open the site and click "recover the demo asset": a real seeded asset is recovered to VERIFIED with
+its signed manifest, its C2PA Content Credentials are read in the browser, and the transparency log
+renders as a 3D Merkle tree. The live demo runs credential-free (the recovery loop closes on a real
+seeded fixture); funding a generation provider enables the full generate-to-recover path on real AI
+media. Provenance proves origin, not truth.
+
 ## Why it exists
 
 Fewer than 1% of images published online carry C2PA metadata, and embedded manifests are routinely

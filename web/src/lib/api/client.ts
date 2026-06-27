@@ -5,10 +5,10 @@ import createClient from "openapi-react-query";
 
 import type { paths } from "./schema";
 
-// The backend base URL. Defaults to the local FastAPI dev server; set NEXT_PUBLIC_API_BASE_URL
-// (see .env.example) for deployed environments.
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// Default to the same-origin "/api" proxy (next.config rewrites it to the backend), so the browser
+// never makes a cross-origin request and CORS is a non-issue. Override with NEXT_PUBLIC_API_BASE_URL
+// to point the client straight at a CORS-enabled backend instead.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 export const fetchClient = createFetchClient<paths>({ baseUrl: API_BASE_URL });
 

@@ -57,6 +57,14 @@ export function RecoverPanel() {
     if (file) submit(file);
   }
 
+  async function trySample() {
+    // The backend seeds one real asset and serves its exact bytes at /demo/sample; recovering it
+    // exercises the genuine loop (it is registered, so this resolves to VERIFIED).
+    const res = await fetch("/api/demo/sample");
+    const blob = await res.blob();
+    submit(new File([blob], "sample.png", { type: blob.type || "image/png" }));
+  }
+
   const phase: Phase = recover.isError
     ? "error"
     : recover.isPending
@@ -93,6 +101,16 @@ export function RecoverPanel() {
           if (file) submit(file);
         }}
       />
+
+      <div className="mt-3 text-center">
+        <button
+          type="button"
+          onClick={trySample}
+          className="font-mono text-xs text-sky-300/80 underline-offset-4 hover:underline"
+        >
+          or recover the demo asset
+        </button>
+      </div>
 
       <div className="mt-5 min-h-24">
         <AnimatePresence mode="wait">

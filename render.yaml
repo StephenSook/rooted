@@ -1,6 +1,7 @@
 # Render Blueprint for the Rooted SBR API (matches the live service). The front end deploys to Vercel.
-# The demo runs fully in-memory (no Postgres/Redis/B2/provider keys), so this needs no credentials:
-# the seeded demo asset makes the live site show a real VERIFIED recovery.
+# The demo runs in-memory by default (no Postgres/Redis/provider keys needed): the seeded demo asset
+# makes the live site show a real VERIFIED recovery. Set the B2 env (below) in the dashboard to also
+# store each asset/manifest/signature on Backblaze B2 and light up the /demo/storage panel.
 #
 # Native Python runtime + uv (NOT Docker): this is what actually runs at
 # https://rooted-api-ubvc.onrender.com. (The Render API/MCP cannot create Docker services, so the
@@ -21,3 +22,11 @@ services:
         value: "1"
       - key: PYTHON_VERSION
         value: "3.12.7"
+      # Backblaze B2 object store. sync:false keeps the values out of the repo; set them in the
+      # Render dashboard. With all three present the demo writes asset/manifest/signature to B2.
+      - key: B2_KEY_ID
+        sync: false
+      - key: B2_APP_KEY
+        sync: false
+      - key: B2_BUCKET_DEV
+        sync: false

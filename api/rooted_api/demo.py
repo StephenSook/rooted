@@ -16,6 +16,7 @@ in-memory. Gated on ROOTED_DEMO_SEED, and idempotent so a restart never duplicat
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import os
@@ -53,6 +54,19 @@ _PRIMARY_PROVENANCE = {
     "prompt": _PRIMARY_PROMPT,
 }
 _FIXTURE_PROVENANCE = {"model": "rooted-demo-fixture", "note": "seeded demo asset"}
+
+
+def primary_manifest() -> Manifest:
+    """The primary demo asset's manifest (the same canonical fields the seed registers). Used by
+    /demo/signed-manifest + the live tamper-evidence demo, so signing and verifying agree."""
+    return Manifest(
+        manifest_id=DEMO_MANIFEST_ID,
+        asset_sha256=hashlib.sha256(demo_sample_bytes()).hexdigest(),
+        created_at=_CREATED_AT,
+        system_provenance=_PRIMARY_PROVENANCE,
+        soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=DEMO_WATERMARK_ID)],
+    )
+
 
 # Extra fixtures so the transparency log (and the Merkle explorer) has real structure, not one leaf.
 _EXTRA_SEEDS = (11, 13, 17, 19, 23, 29)
@@ -149,6 +163,22 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
 async def demo_sample() -> Response:
     """Serve the demo asset bytes so the UI can recover it. No provenance data; safe unauthed."""
     return Response(content=demo_sample_bytes(), media_type="image/jpeg")
+
+
+@router.get("/demo/signed-manifest", include_in_schema=False)
+async def demo_signed_manifest() -> dict[str, Any]:
+    """The primary demo manifest, its COSE signature (signed with the server's checkpoint key), and
+    the public key. The UI lets a judge edit a field and POST it to /verify; any change to a signed
+    field flips the signature invalid, demonstrating tamper-evidence live."""
+    from rooted_api import sbr
+
+    manifest = primary_manifest()
+    cose = sign_manifest(manifest, sbr._signing_key)
+    return {
+        "manifest": manifest.model_dump(by_alias=True),
+        "signatureB64": base64.b64encode(cose).decode(),
+        "publicKeyHex": sbr._public_key_hex(),
+    }
 
 
 @router.get("/demo/storage", include_in_schema=False)

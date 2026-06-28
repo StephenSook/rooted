@@ -11,6 +11,8 @@ camelCase aliases, while model_dump() stays snake_case for storage, canonical ha
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import io
@@ -38,7 +40,12 @@ from rooted_provenance.models import (
     SupportedAlgorithms,
 )
 from rooted_provenance.resolver import Index, InMemoryIndex, Resolver
-from rooted_provenance.signing import generate_keypair, load_private_key, public_key_bytes
+from rooted_provenance.signing import (
+    generate_keypair,
+    load_private_key,
+    public_key_bytes,
+    verify_manifest,
+)
 from rooted_provenance.watermark import FakeWatermarker, Watermarker
 from rooted_storage.storage import Storage
 
@@ -403,6 +410,40 @@ async def get_manifest(manifest_id: str) -> Manifest:
     if manifest is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     return manifest.redacted()  # SB 942 split: withhold personal provenance on read
+
+
+class VerifyRequest(CamelModel):
+    """A manifest plus a COSE_Sign1 signature (base64) to check against the checkpoint key."""
+
+    manifest: Manifest
+    signature_b64: str
+
+
+class VerifyResponse(CamelModel):
+    """Whether the signature covers this exact manifest, with the key it was checked against."""
+
+    signature_valid: bool
+    public_key_hex: str
+    key_source: str
+
+
+@router.post("/verify", response_model=VerifyResponse)
+async def verify(req: VerifyRequest) -> VerifyResponse:
+    """Verify a manifest against a COSE signature using the server's checkpoint public key. Changing
+    ANY signed field (manifest id, asset hash, created-at, system provenance) makes this False, so a
+    client can prove tamper-evidence live. Adversarial input (bad base64, malformed COSE, a tampered
+    manifest) collapses to signatureValid=false, never a 500."""
+    try:
+        cose = base64.b64decode(req.signature_b64, validate=True)
+    except (binascii.Error, ValueError):
+        valid = False
+    else:
+        valid = await run_in_threadpool(
+            verify_manifest, cose, req.manifest, _signing_key.public_key()
+        )
+    return VerifyResponse(
+        signature_valid=valid, public_key_hex=_public_key_hex(), key_source=_key_source
+    )
 
 
 class CheckpointResponse(CamelModel):

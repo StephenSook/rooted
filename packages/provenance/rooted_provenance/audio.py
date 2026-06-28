@@ -40,6 +40,23 @@ class AudioDecodeError(ValueError):
     """Audio could not be decoded to PCM (bad or unsupported input, too large, or ffmpeg failed)."""
 
 
+_ffmpeg_path: str | None = None
+
+
+def ffmpeg_exe() -> str:
+    """The ffmpeg executable path. Prefer imageio-ffmpeg's bundled static binary, so a lean deploy
+    and CI need no system ffmpeg; fall back to a system 'ffmpeg' on PATH. Cached."""
+    global _ffmpeg_path
+    if _ffmpeg_path is None:
+        try:
+            import imageio_ffmpeg
+
+            _ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:  # noqa: BLE001 - any failure resolving the bundled binary -> system ffmpeg
+            _ffmpeg_path = "ffmpeg"
+    return _ffmpeg_path
+
+
 def _decode_pcm(data: bytes) -> npt.NDArray[np.float32]:
     """Decode arbitrary audio bytes to canonical mono float PCM via ffmpeg, failing closed.
 
@@ -56,7 +73,7 @@ def _decode_pcm(data: bytes) -> npt.NDArray[np.float32]:
     # itself fails (a NamedTemporaryFile whose write raised before name capture would leak).
     fd, path = tempfile.mkstemp(suffix=".audioin")
     cmd = [
-        "ffmpeg",
+        ffmpeg_exe(),
         "-v",
         "error",
         "-nostdin",

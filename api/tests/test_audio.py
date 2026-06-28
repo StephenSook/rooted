@@ -20,6 +20,7 @@ from httpx import Response
 
 from rooted_api import demo, sbr
 from rooted_api.main import app
+from rooted_provenance.audio import ffmpeg_exe
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.watermark import FakeWatermarker
@@ -46,7 +47,7 @@ def _reencode(data: bytes, args: list[str], ext: str) -> bytes:
         ipath = f.name
     opath = f"{ipath}.{ext}"
     try:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ipath, *args, opath], check=True)
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", ipath, *args, opath], check=True)
         with open(opath, "rb") as out:
             return out.read()
     finally:

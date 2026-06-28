@@ -12,7 +12,9 @@ camelCase aliases, while model_dump() stays snake_case for storage, canonical ha
 from __future__ import annotations
 
 import hashlib
+import hmac
 import io
+import logging
 import os
 import threading
 from datetime import UTC, datetime
@@ -20,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
@@ -38,6 +40,13 @@ from rooted_provenance.resolver import Index, InMemoryIndex, Resolver
 from rooted_provenance.signing import generate_keypair, load_private_key, public_key_bytes
 from rooted_provenance.watermark import FakeWatermarker, Watermarker
 from rooted_storage.storage import Storage
+
+logger = logging.getLogger(__name__)
+
+# Bound the decoder's pixel budget so a small, highly compressible upload cannot expand into
+# hundreds of MB on decode. Pillow only raises DecompressionBombError above 2x this; the 1x-2x band
+# merely warns and would otherwise proceed, so _decode_image promotes that warning to an error too.
+Image.MAX_IMAGE_PIXELS = 64_000_000
 
 router = APIRouter()
 
@@ -111,7 +120,12 @@ def _make_watermarker() -> Watermarker:
 
             return TrustMarkWatermarker()  # __init__ imports trustmark -> ImportError if absent
         except ImportError:
-            pass
+            # The operator explicitly opted into real watermarking; do not silently degrade to the
+            # no-op fake. Warn loudly so the missing `watermark` extra is visible in the logs.
+            logger.warning(
+                "ROOTED_REAL_WATERMARK=1 but the trustmark extra is not importable; "
+                "falling back to the no-op FakeWatermarker (install the `watermark` extra)"
+            )
     return FakeWatermarker()
 
 
@@ -221,17 +235,58 @@ def _decode_image(data: bytes) -> Image.Image:
     """Decode uploaded bytes to an RGB image, failing closed on untrusted input. An oversized upload
     is rejected (413) before decode; anything that is not a decodable image, including a
     decompression bomb whose header declares a huge size, becomes a 415 rather than a 500.
-    DecompressionBombError is not an OSError, so it must be caught explicitly."""
+
+    The bomb check reads the declared pixel size from the header (Image.open is lazy) and rejects
+    before materializing pixels with .convert(). This is an explicit, thread-safe check: it does not
+    touch the process-global warnings filters, so it is safe under the multi-thread decode pool
+    (mutating warnings filters there could let a concurrent decode slip a bomb through).
+    DecompressionBombError is not an OSError, so it is caught explicitly."""
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="uploaded asset too large")
     try:
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        img = Image.open(io.BytesIO(data))
+        width, height = img.size
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, ValueError) as exc:
+        raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
+    if width * height > Image.MAX_IMAGE_PIXELS:
+        raise HTTPException(status_code=415, detail="invalid or unsupported image")
+    try:
+        return img.convert("RGB")
+    except (OSError, Image.DecompressionBombError, ValueError) as exc:
         raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
 
 
 async def _read_image(file: UploadFile) -> Image.Image:
-    return _decode_image(await file.read())
+    # Offload the CPU/memory-bound decode off the event loop so a large (or bomb) image cannot stall
+    # request handling for every other client.
+    data = await file.read()
+    return await run_in_threadpool(_decode_image, data)
+
+
+def _check_ingest_auth(provided: str | None) -> None:
+    """Gate the /ingest write path. ROOTED_INGEST_KEY, when set, must match the X-Ingest-Key header
+    (constant-time). When it is unset, ingest is allowed in the credential-free demo but fails
+    closed in production (APP_ENV=production or ROOTED_REQUIRE_INGEST_KEY=1), mirroring the
+    signing-key fail-closed pattern, so a public deploy never exposes an unauthenticated writer."""
+    expected = os.environ.get("ROOTED_INGEST_KEY")
+    if expected:
+        # Compare as bytes: hmac.compare_digest raises on a non-ASCII str, which would turn a
+        # crafted header into a 500 instead of a clean 401. Encoding sidesteps that (still fails
+        # closed regardless), keeping the comparison constant-time.
+        ok = provided is not None and hmac.compare_digest(
+            provided.encode("utf-8"), expected.encode("utf-8")
+        )
+        if not ok:
+            raise HTTPException(status_code=401, detail="invalid or missing ingest credential")
+        return
+    require = (
+        os.environ.get("ROOTED_REQUIRE_INGEST_KEY") == "1"
+        or os.environ.get("APP_ENV") == "production"
+    )
+    if require:
+        raise HTTPException(
+            status_code=503, detail="ingest is disabled: ROOTED_INGEST_KEY is not configured"
+        )
 
 
 @router.get("/services/supportedAlgorithms", response_model=SupportedAlgorithms)
@@ -243,9 +298,11 @@ async def supported_algorithms() -> SupportedAlgorithms:
     "/ingest",
     responses={
         400: {"description": "malformed request body"},
-        409: {"description": "manifest id already exists"},
+        401: {"description": "invalid or missing ingest credential"},
+        409: {"description": "manifest id or watermark id already exists"},
         413: {"description": "uploaded asset too large"},
         415: {"description": "invalid or unsupported image"},
+        503: {"description": "ingest disabled (no ingest key configured in production)"},
     },
 )
 async def ingest(
@@ -253,19 +310,26 @@ async def ingest(
     manifest_id: str = Form(...),
     watermark_id: str = Form(...),
     model: str = Form("unknown"),
+    x_ingest_key: str | None = Header(default=None, alias="X-Ingest-Key"),
 ) -> dict[str, str]:
-    """Trusted generation-side ingest (authenticated in prod). Public surface is /matches/*.
+    """Trusted generation-side ingest, gated by ROOTED_INGEST_KEY (the X-Ingest-Key header; required
+    in production). The public query surface is /matches/*.
 
-    The asset hash is computed from the uploaded bytes, never taken from the client, and an existing
-    manifest id is not overwritten.
+    The asset hash is computed from the uploaded bytes, never taken from the client. An existing
+    manifest id is not overwritten (409), and a watermark id already bound to a manifest cannot be
+    re-pointed (409), so a second ingest cannot poison recovery for a victim's watermark.
     """
+    _check_ingest_auth(x_ingest_key)
     resolver = get_resolver()
     # The index calls are synchronous (psycopg); offload them so a DB round-trip never blocks the
     # event loop and serializes concurrent requests.
     if await run_in_threadpool(resolver.get_manifest, manifest_id) is not None:
         raise HTTPException(status_code=409, detail="manifest id already exists")
+    existing = await run_in_threadpool(resolver.resolve_by_binding, ALG_TRUSTMARK_P, watermark_id)
+    if existing.matches:
+        raise HTTPException(status_code=409, detail="watermark id already bound to a manifest")
     data = await file.read()
-    image = _decode_image(data)
+    image = await run_in_threadpool(_decode_image, data)
     manifest = Manifest(
         manifest_id=manifest_id,
         asset_sha256=hashlib.sha256(data).hexdigest(),
@@ -363,11 +427,9 @@ class LogResponse(CamelModel):
 async def transparency_log() -> LogResponse:
     """The append-ordered log leaves plus the current root. A transparency log is meant to be
     auditable, so the entries are public; this also feeds the Merkle explorer."""
-    log = get_log()
-    # One snapshot: read the entries and the matching root with no await in between.
-    rows = await run_in_threadpool(log.entries)
-    size = log.size
-    root = log.root(size)
+    # One snapshot: entries, size, and root read in a single synchronous pass in the threadpool,
+    # so the leaf list, the tree size, and the root cannot disagree under a concurrent append.
+    rows, size, root = await run_in_threadpool(get_log().snapshot)
     return LogResponse(
         entries=[LogEntry(leaf_index=i, manifest_id=m, leaf_hash=h) for i, m, h in rows],
         tree_size=size,
@@ -397,19 +459,23 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
     if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
-    # No await between these reads, so the proof, the root, and the checkpoint share one tree state.
-    size = log.size
-    root = log.root(size)
-    proof = log.prove_inclusion(index, size)
+    # signed_proof computes the proof, the root, and the signed checkpoint under one lock, so the
+    # proof's root and the checkpoint's root describe the same tree state (no divergence under a
+    # concurrent append) and the CPU-bound proof runs off the event loop.
+    size, root, proof, checkpoint, verified = await run_in_threadpool(
+        log.signed_proof, index, _signing_key, datetime.now(UTC).isoformat()
+    )
     return InclusionProofResponse(
         manifest_id=manifest_id,
-        leaf_index=index,
+        # index is the pymerkle 1-based position (used for prove/verify); the response field is
+        # 0-based to agree with GET /transparency/log, so a client can cross-reference the two.
+        leaf_index=index - 1,
         leaf_hash=manifest.canonical_hash(),
         tree_size=size,
         root_hash=root.hex(),
         proof=proof.serialize(),
-        checkpoint=_signed_head(),
+        checkpoint=checkpoint,
         public_key_hex=_public_key_hex(),
         key_source=_key_source,
-        server_verified=log.verify_inclusion(index, proof, root),
+        server_verified=verified,
     )

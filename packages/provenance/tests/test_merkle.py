@@ -54,6 +54,35 @@ def test_consistency_proof_under_growth() -> None:
     assert log.verify_consistency(prior_root, current_root, proof) is True
 
 
+def test_snapshot_is_internally_consistent() -> None:
+    # snapshot() returns (entries, size, root) read in one synchronous pass, so the leaf list,
+    # the tree size, and the root cannot disagree under concurrent appends.
+    log = TransparencyLog()
+    log.append("urn:c2pa:a", "hash-a")
+    log.append("urn:c2pa:b", "hash-b")
+    entries, size, root = log.snapshot()
+    assert size == 2
+    assert len(entries) == 2
+    assert entries == [(0, "urn:c2pa:a", "hash-a"), (1, "urn:c2pa:b", "hash-b")]
+    assert root == log.root(2)
+
+
+def test_signed_proof_pins_proof_and_checkpoint_to_one_state() -> None:
+    # signed_proof returns the proof and the signed checkpoint computed under one lock, so the
+    # checkpoint pins the exact root the proof was built against (no divergence under a race).
+    priv, pub = generate_keypair()
+    log = TransparencyLog()
+    log.append("urn:c2pa:a", "hash-a")
+    idx = log.append("urn:c2pa:b", "hash-b")
+    size, root, proof, cp, verified = log.signed_proof(idx, priv, "2026-06-28T00:00:00Z")
+    assert verified is True
+    assert size == 2
+    assert cp.tree_size == size
+    assert cp.root_hash == root.hex()  # the checkpoint pins the SAME root as the proof
+    assert verify_checkpoint(cp, pub) is True
+    assert log.verify_inclusion(idx, proof, root) is True
+
+
 def test_rehydrates_tree_and_index_from_leaf_store() -> None:
     store = InMemoryLeafStore()
     log = TransparencyLog(store)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import threading
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -62,6 +63,11 @@ class TransparencyLog:
     proofs survive a restart or a second instance, instead of resetting to an empty tree."""
 
     def __init__(self, leaf_store: LeafStore | None = None) -> None:
+        # One reentrant lock guards every mutation and every multi-read snapshot of the shared tree,
+        # so a concurrent append (the routes run in a threadpool) can never interleave with a read
+        # that spans more than one access (snapshot, signed_proof). RLock so a locked method may
+        # call another locked method without self-deadlock.
+        self._lock = threading.RLock()
         self._tree = InmemoryTree(algorithm="sha256")
         self._index: dict[str, int] = {}
         self._store: LeafStore = leaf_store if leaf_store is not None else InMemoryLeafStore()
@@ -70,10 +76,11 @@ class TransparencyLog:
 
     def append(self, manifest_id: str, leaf_hash: str) -> int:
         """Add a manifest's canonical hash as a leaf (persisting it); return its 1-based index."""
-        position = self._tree.append_entry(leaf_hash.encode())
-        self._index[manifest_id] = position
-        self._store.append(manifest_id, leaf_hash)
-        return position
+        with self._lock:
+            position = self._tree.append_entry(leaf_hash.encode())
+            self._index[manifest_id] = position
+            self._store.append(manifest_id, leaf_hash)
+            return position
 
     def index_for(self, manifest_id: str) -> int | None:
         return self._index.get(manifest_id)
@@ -82,6 +89,14 @@ class TransparencyLog:
         """The ordered log entries as (leaf_index, manifest_id, leaf_hash). A transparency log is
         meant to be auditable, so exposing the append-ordered leaves is by design."""
         return [(i, mid, leaf_hash) for i, (mid, leaf_hash) in enumerate(self._store.all())]
+
+    def snapshot(self) -> tuple[list[tuple[int, str, str]], int, bytes]:
+        """The entries, tree size, and root read under the lock in one pass, so the leaf list, the
+        size, and the root cannot disagree even under a concurrent append from another thread."""
+        with self._lock:
+            entries = self.entries()
+            size = self.size
+            return entries, size, self.root(size)
 
     def close(self) -> None:
         """Release the leaf store's resources (e.g. a Postgres pool); a no-op for in-memory."""
@@ -119,17 +134,37 @@ class TransparencyLog:
         except InvalidProof:
             return False
 
-    def checkpoint(self, epoch: int, priv: Ed25519PrivateKey, signed_at: str) -> MerkleCheckpoint:
-        size = self.size
-        root_hex = self.root().hex()
-        signature = priv.sign(_checkpoint_head(epoch, size, root_hex))
+    def _checkpoint_for(
+        self, epoch: int, tree_size: int, root_hex: str, priv: Ed25519PrivateKey, signed_at: str
+    ) -> MerkleCheckpoint:
+        """Sign a checkpoint over a GIVEN tree state, so callers can pin it to the exact size/root
+        they already read (rather than re-reading the live tree and risking a divergent state)."""
+        signature = priv.sign(_checkpoint_head(epoch, tree_size, root_hex))
         return MerkleCheckpoint(
             epoch=epoch,
-            tree_size=size,
+            tree_size=tree_size,
             root_hash=root_hex,
             signed_at=signed_at,
             signature_b64=base64.b64encode(signature).decode(),
         )
+
+    def checkpoint(self, epoch: int, priv: Ed25519PrivateKey, signed_at: str) -> MerkleCheckpoint:
+        with self._lock:
+            return self._checkpoint_for(epoch, self.size, self.root().hex(), priv, signed_at)
+
+    def signed_proof(
+        self, index: int, priv: Ed25519PrivateKey, signed_at: str
+    ) -> tuple[int, bytes, MerkleProof, MerkleCheckpoint, bool]:
+        """An inclusion proof and the signed checkpoint that pins it, computed under one lock so the
+        proof's root, the returned root, and the checkpoint all describe the SAME tree state.
+        Returns (tree_size, root, proof, checkpoint, server_verified)."""
+        with self._lock:
+            size = self.size
+            root = self.root(size)
+            proof = self.prove_inclusion(index, size)
+            verified = self.verify_inclusion(index, proof, root)
+            checkpoint = self._checkpoint_for(size, size, root.hex(), priv, signed_at)
+            return size, root, proof, checkpoint, verified
 
 
 def verify_checkpoint(cp: MerkleCheckpoint, pub: Ed25519PublicKey) -> bool:

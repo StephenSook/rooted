@@ -78,6 +78,26 @@ async def test_transparency_log_route() -> None:
         sbr.set_log(None)
 
 
+async def test_log_and_proof_leaf_index_agree() -> None:
+    # /transparency/log and /transparency/proof must report the SAME leaf index for a manifest
+    # (both 0-based), so a client can cross-reference a log entry against its inclusion proof.
+    resolver, log = _fresh()
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    seed_demo(resolver, log)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            log_r = await c.get("/transparency/log")
+            proof_r = await c.get(f"/transparency/proof/{DEMO_MANIFEST_ID}")
+            assert proof_r.status_code == 200
+            log_idx = log_r.json()["entries"][0]["leafIndex"]
+            proof_idx = proof_r.json()["leafIndex"]
+            assert log_idx == proof_idx == 0
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
+
+
 async def test_demo_sample_route_then_recover() -> None:
     resolver, log = _fresh()
     sbr.set_resolver(resolver)

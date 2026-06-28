@@ -53,7 +53,10 @@ class InMemoryIndex:
         return self.manifests.get(manifest_id)
 
     def put_watermark_binding(self, watermark_id: str, manifest_id: str) -> None:
-        self.watermarks[watermark_id] = manifest_id
+        # A watermark binding is immutable: once a watermark id points to a manifest, a later write
+        # must not silently re-point it (that would poison recovery via /matches/byBinding). Mirrors
+        # the Postgres ON CONFLICT (watermark_id) DO NOTHING. The API rejects re-points with a 409.
+        self.watermarks.setdefault(watermark_id, manifest_id)
 
     def manifest_for_watermark(self, watermark_id: str) -> str | None:
         return self.watermarks.get(watermark_id)

@@ -28,7 +28,7 @@ from rooted_storage.index import PostgresIndex
 try:
     import pgserver
 except Exception:  # pragma: no cover - platform without a pgserver wheel
-    pgserver = None
+    pgserver = None  # type: ignore[assignment]
 
 
 def _png(seed: int) -> bytes:

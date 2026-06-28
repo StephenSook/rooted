@@ -73,8 +73,8 @@ class SbrClient:
 _client: SbrClient | None = None
 
 
-def set_client(client: SbrClient) -> None:
-    """Inject the SBR client (tests point this at an in-process app)."""
+def set_client(client: SbrClient | None) -> None:
+    """Inject the SBR client (tests point this at an in-process app), or reset it with None."""
     global _client
     _client = client
 

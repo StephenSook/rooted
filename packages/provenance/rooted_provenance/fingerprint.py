@@ -7,7 +7,10 @@ an INTERNAL index only; it is never advertised as a C2PA soft-binding algorithm.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pdqhash
 from PIL import Image
 
@@ -16,7 +19,7 @@ from .models import PDQ_HAMMING_THRESHOLD
 PDQ_BITS = 256
 
 
-def _to_rgb_array(image: Image.Image | np.ndarray) -> np.ndarray:
+def _to_rgb_array(image: Image.Image | npt.NDArray[Any]) -> npt.NDArray[Any]:
     if isinstance(image, Image.Image):
         return np.array(image.convert("RGB"))
     arr = np.asarray(image)
@@ -25,7 +28,7 @@ def _to_rgb_array(image: Image.Image | np.ndarray) -> np.ndarray:
     return arr
 
 
-def compute_pdq(image: Image.Image | np.ndarray) -> tuple[str, int]:
+def compute_pdq(image: Image.Image | npt.NDArray[Any]) -> tuple[str, int]:
     """Return (256-char bit string, quality 0-100)."""
     vector, quality = pdqhash.compute(_to_rgb_array(image))
     bits = "".join("1" if int(b) else "0" for b in np.asarray(vector).ravel())

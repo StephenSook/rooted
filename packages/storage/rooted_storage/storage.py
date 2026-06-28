@@ -97,7 +97,7 @@ class B2Storage:
     def put(
         self, key: str, data: bytes, *, object_lock: bool = False, retain_days: int | None = None
     ) -> str:
-        kwargs: dict = {}
+        kwargs: dict[str, object] = {}
         if object_lock:
             if not retain_days:
                 raise ValueError("object_lock requires retain_days")

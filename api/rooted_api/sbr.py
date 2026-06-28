@@ -248,7 +248,8 @@ def _decode_image(data: bytes) -> Image.Image:
         width, height = img.size
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, ValueError) as exc:
         raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
-    if width * height > Image.MAX_IMAGE_PIXELS:
+    max_pixels = Image.MAX_IMAGE_PIXELS
+    if max_pixels is not None and width * height > max_pixels:
         raise HTTPException(status_code=415, detail="invalid or unsupported image")
     try:
         return img.convert("RGB")

@@ -11,7 +11,7 @@ import base64
 import binascii
 import threading
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -77,7 +77,7 @@ class TransparencyLog:
     def append(self, manifest_id: str, leaf_hash: str) -> int:
         """Add a manifest's canonical hash as a leaf (persisting it); return its 1-based index."""
         with self._lock:
-            position = self._tree.append_entry(leaf_hash.encode())
+            position: int = self._tree.append_entry(leaf_hash.encode())
             self._index[manifest_id] = position
             self._store.append(manifest_id, leaf_hash)
             return position
@@ -106,10 +106,10 @@ class TransparencyLog:
 
     @property
     def size(self) -> int:
-        return self._tree.get_size()
+        return cast(int, self._tree.get_size())
 
     def root(self, size: int | None = None) -> bytes:
-        return self._tree.get_state(size)
+        return cast(bytes, self._tree.get_state(size))
 
     def prove_inclusion(self, index: int, size: int | None = None) -> MerkleProof:
         return self._tree.prove_inclusion(index, size)

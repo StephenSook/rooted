@@ -4,6 +4,10 @@
 !.env.example
 *.pem
 *.key
+# Public C2PA conformance TEST trust anchors (no private key; the certs are marked FOR TESTING_ONLY).
+# Whitelisted past the blanket *.pem rule so the trusted-path demo can ship them.
+!packages/provenance/rooted_provenance/conformance/anchors.pem
+!web/public/c2pa-trust/anchors.pem
 id_rsa
 service-account*.json
 .npmrc

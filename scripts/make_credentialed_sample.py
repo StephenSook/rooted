@@ -4,8 +4,9 @@ ES256 test certificate, for the front-end Content Credentials display.
 The signed image is committed; the signing key is NOT (it lives in the gitignored
 research/c2pa-test-certs/). Run from the repo root:
 `uv run python scripts/make_credentialed_sample.py`.
-The test cert yields a "Valid" signature, not the green "Trusted" state (which needs a
-Conformance-Program CA); the UI states that honestly.
+The test cert yields a "Valid" signature without a trust list, and the green "Trusted" state when
+validated against the C2PA conformance test trust list (the test certificate is marked FOR TESTING
+ONLY; production validates against the C2PA production trust list). The UI shows both honestly.
 """
 
 from __future__ import annotations
@@ -15,7 +16,14 @@ import io
 from pathlib import Path
 
 from rooted_api.demo import _demo_image
-from rooted_provenance.claim import build_manifest_def, make_es256_signer, read_claim, sign_claim
+from rooted_provenance.claim import (
+    build_manifest_def,
+    conformance_trust_anchors,
+    conformance_trust_config,
+    make_es256_signer,
+    read_claim,
+    sign_claim,
+)
 from rooted_provenance.models import Manifest
 
 CERTS = Path("research/c2pa-test-certs")
@@ -41,8 +49,17 @@ def main() -> None:
         signer, jpeg, build_manifest_def(manifest, "DEMO", "image/jpeg"), "image/jpeg"
     )
 
-    _manifest_json, validation = read_claim(signed, fmt="image/jpeg")
-    print(f"validation_state: {validation}; signed bytes: {len(signed)}")
+    _mj, valid = read_claim(signed, fmt="image/jpeg")
+    _mj2, trusted = read_claim(
+        signed,
+        fmt="image/jpeg",
+        trust_anchors=conformance_trust_anchors(),
+        trust_config=conformance_trust_config(),
+    )
+    print(
+        f"validation_state: {valid}; with the conformance trust list: {trusted}; "
+        f"signed bytes: {len(signed)}"
+    )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_bytes(signed)

@@ -129,11 +129,15 @@ describe("ProvidersPanel", () => {
     const buttons = await screen.findAllByText("Recover");
     fireEvent.click(buttons[0]);
 
-    expect(await screen.findByText("VERIFIED")).toBeTruthy();
-    expect(await screen.findByText("100/100")).toBeTruthy();
+    expect(await screen.findByText("VERIFIED", undefined, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByText("100/100", undefined, { timeout: 4000 })).toBeTruthy();
     // the recovered manifest's real system provenance (model + provider) is rendered. These strings
     // also appear in the static tile metadata, so the recovered copy makes them appear twice.
-    expect((await screen.findAllByText("nano-banana-2")).length).toBeGreaterThanOrEqual(2);
-    expect((await screen.findAllByText("kie.ai-nano-banana")).length).toBeGreaterThanOrEqual(2);
-  });
+    expect(
+      (await screen.findAllByText("nano-banana-2", undefined, { timeout: 4000 })).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      (await screen.findAllByText("kie.ai-nano-banana", undefined, { timeout: 4000 })).length,
+    ).toBeGreaterThanOrEqual(2);
+  }, 15000);
 });

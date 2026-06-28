@@ -58,11 +58,12 @@ export function RecoverPanel() {
   }
 
   async function trySample() {
-    // The backend seeds one real asset and serves its exact bytes at /demo/sample; recovering it
-    // exercises the genuine loop (it is registered, so this resolves to VERIFIED).
+    // The backend seeds one real AI-generated asset (Genblaze on GMI Cloud) and serves its exact
+    // bytes at /demo/sample; recovering it exercises the genuine loop (it is registered, so this
+    // resolves to VERIFIED).
     const res = await fetch("/api/demo/sample");
     const blob = await res.blob();
-    submit(new File([blob], "sample.png", { type: blob.type || "image/png" }));
+    submit(new File([blob], "sample.jpg", { type: blob.type || "image/jpeg" }));
   }
 
   const phase: Phase = recover.isError

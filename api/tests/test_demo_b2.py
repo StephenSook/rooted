@@ -10,7 +10,7 @@ import httpx
 from httpx import ASGITransport
 
 from rooted_api import sbr
-from rooted_api.demo import DEMO_MANIFEST_ID, demo_sample_png, seed_demo
+from rooted_api.demo import DEMO_MANIFEST_ID, demo_sample_bytes, seed_demo
 from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
@@ -30,7 +30,7 @@ def _fresh() -> tuple[Resolver, TransparencyLog, InMemoryStorage]:
 def test_seed_writes_asset_manifest_signature_to_storage() -> None:
     resolver, log, storage = _fresh()
     seed_demo(resolver, log, storage)
-    sha = hashlib.sha256(demo_sample_png()).hexdigest()
+    sha = hashlib.sha256(demo_sample_bytes()).hexdigest()
     assert storage.exists(asset_key(sha))
     assert storage.exists(manifest_key(DEMO_MANIFEST_ID))
     assert storage.exists(signature_key(DEMO_MANIFEST_ID))

@@ -29,7 +29,7 @@ from starlette.types import Lifespan
 
 from rooted_api.agent import router as agent_router
 from rooted_api.demo import router as demo_router
-from rooted_api.demo import seed_audio_demo, seed_demo, seed_video_demo
+from rooted_api.demo import seed_audio_demo, seed_demo, seed_providers, seed_video_demo
 from rooted_api.generate import router as generate_router
 from rooted_api.lineage import router as lineage_router
 from rooted_api.sbr import (
@@ -59,6 +59,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_demo(get_resolver(), get_log(), get_storage())
         seed_audio_demo(get_audio_resolver(), get_log(), get_storage())
         seed_video_demo(get_video_resolver(), get_log(), get_storage())
+        # The multi-provider image demos share the image resolver + the transparency log + B2.
+        seed_providers(get_resolver(), get_log(), get_storage())
     # Wire the mounted MCP server's tools to THIS app's SBR routes through an in-process ASGI
     # client: no network hop and no credentials, the same path the test suite uses. So /mcp and the
     # front end consume the exact same vendor-neutral API.

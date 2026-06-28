@@ -13,12 +13,20 @@ dependencies = [
     # ship in the base install. This keeps the deploy self-consistent (the standard build command
     # installs everything live generation needs) with no separate extra or blueprint sync to forget.
     "rooted-worker[genblaze]",
+    # rooted-mcp (the curated provenance MCP server) is mounted in-process at /mcp on this app, so the
+    # MCP product surface is reachable on the same deploy with no separate service. It is light
+    # (fastmcp + httpx, no native build), so it ships in the base install.
+    "rooted-mcp",
+    # The Anthropic SDK powers the live provenance agent (/demo/agent), which is opt-in via
+    # ANTHROPIC_API_KEY and serves an honest disabled response until a key is set.
+    "anthropic>=0.40",
 ]
 
 [tool.uv.sources]
 rooted-provenance = { workspace = true }
 rooted-storage = { workspace = true }
 rooted-worker = { workspace = true }
+rooted-mcp = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

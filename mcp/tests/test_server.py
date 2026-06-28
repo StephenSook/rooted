@@ -190,6 +190,32 @@ async def test_query_transparency_log_absent_manifest(sbr: SbrClient) -> None:
     assert result.data["included"] is False
 
 
+async def test_verify_asset_rejects_oversized_base64(
+    sbr: SbrClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An oversized image_base64 is rejected before it is decoded (the /mcp tools are unauthed),
+    # returning the structured error the tool already handles; the cap is lowered to keep it small.
+    import rooted_mcp.server as server
+
+    monkeypatch.setattr(server, "_MAX_B64_LEN", 8)
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "verify_asset", {"image_base64": base64.b64encode(_png(1)).decode()}
+        )
+    assert result.data["recovered"] is False
+    assert "error" in result.data
+
+
+async def test_query_transparency_log_id_is_not_path_traversable(sbr: SbrClient) -> None:
+    # A dot-segment id is percent-encoded at the client, so it 404s (no match) instead of being
+    # normalized into another route like /transparency/checkpoint.
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "query_transparency_log", {"manifest_id": "../transparency/checkpoint"}
+        )
+    assert result.data["included"] is False
+
+
 class _MatchWithoutManifestClient(SbrClient):
     """A client whose content query matches but whose manifest read 404s, to exercise the
     inconsistent-backend edge that the in-memory scaffold cannot produce."""

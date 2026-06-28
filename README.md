@@ -108,11 +108,15 @@ uv run mypy .                                         # strict; CI gates on this
 uvx schemathesis run http://localhost:8000/openapi.json --checks all   # SBR contract
 uvx locust -f load/locustfile.py --host http://localhost:8000 --headless -u 20 -r 5 -t 15s  # load
 cd web && pnpm test                                  # front-end component tests (Vitest + RTL), CI gate
+cd web && pnpm test:e2e                               # Playwright E2E vs the live (or E2E_BASE_URL) stack
 ```
 
 Front-end component tests (Vitest + React Testing Library) cover the 2D recovery and storage UI
 (the FAILED/VERIFIED reveal and the Backblaze B2 panel); the WebGL/R3F scene and the c2pa-web (WASM)
-panel are covered by the live demo, not unit tests.
+panel are covered by the live demo, not unit tests. The Playwright E2E (`pnpm test:e2e`) drives the
+real recovery flow end to end (front end -> /api proxy -> SBR recovery) against the deployed site by
+default (override with `E2E_BASE_URL`); it is a manual / demo-day smoke, not part of the fast CI
+(a browser download is heavy).
 
 The load smoke hits the SBR read endpoints; a recent run held 0 failures at p95 ~6 ms (~60 req/s),
 so the live demo will not fall over under concurrent judges.

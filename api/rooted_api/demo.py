@@ -33,6 +33,7 @@ from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest, SoftBinding, canonical_json
 from rooted_provenance.resolver import Resolver
 from rooted_provenance.signing import generate_keypair, sign_manifest
+from rooted_provenance.video import video_frames
 from rooted_storage.storage import Storage, asset_key, manifest_key, signature_key
 
 DEMO_MANIFEST_ID = "urn:c2pa:demo-0000-0000-0000-000000000001"
@@ -78,6 +79,30 @@ def audio_demo_bytes() -> bytes:
     if _audio_bytes is None:
         _audio_bytes = _AUDIO_ASSET_PATH.read_bytes()
     return _audio_bytes
+
+
+# The demo VIDEO asset: a real Veo3 clip (kie.ai), trimmed to ~6s and bundled here. Recovery is by
+# per-keyframe PDQ (rooted_provenance.video), the video analog of the image fingerprint.
+_VIDEO_ASSET_PATH = Path(__file__).parent / "assets" / "demo-video.mp4"
+DEMO_VIDEO_MANIFEST_ID = "urn:c2pa:demo-video-0000-0000-0000-000000000001"
+DEMO_VIDEO_WATERMARK_ID = "DEMOV"
+_VIDEO_PROVENANCE = {
+    "model": "veo3",
+    "provider": "kie.ai-veo3",
+    "generator": "kie.ai",
+    "title": "Rooted oak on a floating island",
+}
+_video_bytes: bytes | None = None
+
+
+def video_demo_bytes() -> bytes:
+    """The demo video asset's exact bytes (a real Veo3 clip, kie.ai, trimmed to ~6s). Cached on
+    first read. These bytes are what /demo/video serves and what the per-keyframe fingerprints are
+    computed over, so the live video recovery self-matches on genuine AI-generated video."""
+    global _video_bytes
+    if _video_bytes is None:
+        _video_bytes = _VIDEO_ASSET_PATH.read_bytes()
+    return _video_bytes
 
 
 def primary_manifest() -> Manifest:
@@ -211,6 +236,36 @@ def seed_audio_demo(
         storage.put(signature_key(DEMO_AUDIO_MANIFEST_ID), sign_manifest(manifest, key))
 
 
+def seed_video_demo(
+    video_resolver: Resolver, log: TransparencyLog, storage: Storage | None = None
+) -> None:
+    """Register the demo VIDEO asset for recovery: a real Veo3 clip recovered by per-keyframe PDQ.
+    Uses a SEPARATE video resolver (no cross-modal match) while sharing the log + B2. Registers one
+    PDQ per sampled frame under the one manifest. Idempotent: re-registers in the (in-memory) video
+    resolver each startup but appends to the shared log only once."""
+    if video_resolver.get_manifest(DEMO_VIDEO_MANIFEST_ID) is not None:
+        return
+    video_bytes = video_demo_bytes()
+    key, _pub = generate_keypair()
+    manifest = Manifest(
+        manifest_id=DEMO_VIDEO_MANIFEST_ID,
+        asset_sha256=hashlib.sha256(video_bytes).hexdigest(),
+        created_at=_CREATED_AT,
+        system_provenance=_VIDEO_PROVENANCE,
+        soft_bindings=[],  # the per-frame fingerprint is internal (like PDQ), not a registered alg
+    )
+    # resolver.register appends a fingerprint each call, so registering every sampled frame leaves
+    # several frame PDQs under the one manifest, and any frame recovers it after a re-encode.
+    for frame in video_frames(video_bytes):
+        video_resolver.register(manifest, frame, DEMO_VIDEO_WATERMARK_ID)
+    if log.index_for(manifest.manifest_id) is None:
+        log.append(manifest.manifest_id, manifest.canonical_hash())
+    if storage is not None:
+        storage.put(asset_key(manifest.asset_sha256), video_bytes)
+        storage.put(manifest_key(DEMO_VIDEO_MANIFEST_ID), canonical_json(manifest.model_dump()))
+        storage.put(signature_key(DEMO_VIDEO_MANIFEST_ID), sign_manifest(manifest, key))
+
+
 # include_in_schema=False: these are demo aids, not part of the spec-defined SBR contract, so they
 # stay out of the OpenAPI surface (and the schemathesis contract test); the UI fetches them.
 @router.get("/demo/sample", include_in_schema=False)
@@ -223,6 +278,12 @@ async def demo_sample() -> Response:
 async def demo_audio() -> Response:
     """Serve the demo audio bytes so the UI can play it and recover it. No provenance data."""
     return Response(content=audio_demo_bytes(), media_type="audio/mpeg")
+
+
+@router.get("/demo/video", include_in_schema=False)
+async def demo_video() -> Response:
+    """Serve the demo video bytes so the UI can play it and recover it. No provenance data."""
+    return Response(content=video_demo_bytes(), media_type="video/mp4")
 
 
 @router.get("/demo/signed-manifest", include_in_schema=False)

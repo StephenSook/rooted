@@ -15,9 +15,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from rooted_api.demo import router as demo_router
-from rooted_api.demo import seed_audio_demo, seed_demo
+from rooted_api.demo import seed_audio_demo, seed_demo, seed_video_demo
 from rooted_api.generate import router as generate_router
-from rooted_api.sbr import get_audio_resolver, get_log, get_resolver, get_storage
+from rooted_api.sbr import (
+    get_audio_resolver,
+    get_log,
+    get_resolver,
+    get_storage,
+    get_video_resolver,
+)
 from rooted_api.sbr import router as sbr_router
 from rooted_api.status import router as status_router
 
@@ -28,19 +34,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # request, so a misconfigured database fails the deploy loudly.
     get_resolver()
     get_audio_resolver()
+    get_video_resolver()
     get_log()
     # Seed the credential-free demo assets when asked (ROOTED_DEMO_SEED=1), so a live deploy with no
-    # provider key still shows a real VERIFIED recovery. The image and audio assets use separate
-    # resolvers (no cross-modal matches) but share the transparency log + B2. Idempotent.
+    # provider key still shows a real VERIFIED recovery. The image, audio, and video assets use
+    # separate resolvers (no cross-modal matches) but share the transparency log + B2. Idempotent.
     if os.environ.get("ROOTED_DEMO_SEED") == "1":
         seed_demo(get_resolver(), get_log(), get_storage())
         seed_audio_demo(get_audio_resolver(), get_log(), get_storage())
+        seed_video_demo(get_video_resolver(), get_log(), get_storage())
     try:
         yield
     finally:
         # Close the connection pools on shutdown (a no-op for the in-memory backends).
         get_resolver().close()
         get_audio_resolver().close()
+        get_video_resolver().close()
         get_log().close()
 
 

@@ -36,6 +36,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         yield c
     sbr.set_resolver(None)
     sbr.set_audio_resolver(None)
+    sbr.set_video_resolver(None)
     sbr.set_log(None)
     sbr.set_storage(None)
     generate.set_generator(None)

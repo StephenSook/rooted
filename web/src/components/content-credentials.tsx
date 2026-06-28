@@ -77,9 +77,13 @@ export function ContentCredentials() {
 
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.03] p-5 backdrop-blur-md">
-      <h2 className="mb-3 text-xs uppercase tracking-widest text-white/50">
+      <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">
         C2PA Content Credentials
       </h2>
+      <p className="mb-3 text-[11px] text-white/40">
+        Read in the browser from a separately C2PA-credentialed sample, to show the reading
+        capability. The recovered asset is stripped, so its provenance comes from the repository.
+      </p>
 
       {loading && <p className="font-mono text-sm text-white/50">Reading credentials…</p>}
       {error && <p className="font-mono text-sm text-amber-400">{error}</p>}

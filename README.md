@@ -12,11 +12,12 @@ manifest with a tamper-evident transparency-log proof.
 - Web: https://rooted-web-phi.vercel.app
 - API: https://rooted-api-ubvc.onrender.com
 
-Open the site and click "recover the demo asset": a real seeded asset is recovered to VERIFIED with
-its signed manifest, its C2PA Content Credentials are read in the browser, and the transparency log
-renders as a 3D Merkle tree. The live demo runs credential-free (the recovery loop closes on a real
-seeded fixture); funding a generation provider enables the full generate-to-recover path on real AI
-media. Provenance proves origin, not truth.
+Open the site and click "recover the demo asset": a real AI-generated image (created with Genblaze on
+GMI Cloud, model seedream-5.0-lite) is recovered to VERIFIED, the recovered manifest's system
+provenance names that model, a separately C2PA-credentialed sample is read in the browser to show its
+Content Credentials, and the transparency log renders as a 3D Merkle tree. The live demo runs
+credential-free; with B2 credentials set it also stores each asset, manifest, and signature on
+Backblaze B2. Provenance proves origin, not truth.
 
 ## Why it exists
 
@@ -66,9 +67,9 @@ provenance, recover manifests, and audit the transparency log conversationally.
 | Transparency log (signed checkpoint + independently-verifiable, restart-durable proofs) | wired, tested |
 | FastMCP product server (three curated tools) | wired, tested |
 | PostgresIndex (pooled + self-healing, atomic ingest) selected by `DATABASE_URL` | wired, real-Postgres tested via pgserver |
-| Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired; provider-verified to the API boundary; a real image needs a funded provider account |
+| Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation (seedream-5.0-lite), and the full generate -> store-on-B2 -> recover loop was run end to end |
 | TrustMark variant P watermark | wired + verified behind the `watermark` extra; opt-in in the API resolver (`ROOTED_REAL_WATERMARK`); recovery also works via the PDQ fallback |
-| Front end (Next 15, R3F, typed openapi client) + Render/Vercel deploy | wired + live at the URLs above (deploy runs the in-memory demo, credential-free) |
+| Front end (Next 15, R3F, typed openapi client) + Render/Vercel deploy | wired + live at the URLs above (the demo seed runs credential-free; with B2 env set it stores assets on Backblaze B2) |
 | Audio/video modalities | not yet wired |
 
 Numbers in any submission are taken from the actual test suite, never copied from draft prose.
@@ -82,7 +83,7 @@ Real C2PA v2.4 Soft Binding Resolution routes, contract-tested with schemathesis
 - `POST /matches/byContent`, `GET /matches/byBinding` -> `{matches: [{manifestId, similarityScore?}]}`
 - `GET /manifests/{id}` (redacted: system provenance out, personal provenance withheld)
 - `GET /transparency/checkpoint`, `GET /transparency/proof/{id}` (proof pinned to a signed checkpoint)
-- `POST /ingest` (trusted generation-side convenience)
+- `POST /ingest` (trusted generation-side; gated by `ROOTED_INGEST_KEY`, required in production)
 
 ## Quickstart
 
@@ -91,7 +92,7 @@ cp .env.example .env                       # fill real values (B2, provider keys
 uv sync --locked --all-packages --dev      # backend deps
 uv run fastapi dev api/main.py             # the SBR API on :8000
 uv run dramatiq worker.main                # the ingest pipeline worker
-cd web && pnpm install && pnpm dev         # the front end (in progress)
+cd web && pnpm install && pnpm dev         # the front end
 ```
 
 `DATABASE_URL` selects the Postgres index (live recovery on Postgres); unset, Rooted runs on an
@@ -114,8 +115,16 @@ so the live demo will not fall over under concurrent judges.
 ## Honesty and limitations
 
 - Provenance proves origin, not truth. A self-signed credential shows "Valid," not the green
-  "Trusted" state, which needs a Conformance-Program CA; Rooted demos the green path via the C2PA
-  conformance test mode, labeled on screen as test mode, rather than hiding the distinction.
+  "Trusted" state, which needs a Conformance-Program CA. Rooted surfaces this distinction honestly in
+  the UI rather than hiding it; a labeled conformance-test-mode trust path is future work, not
+  claimed as wired.
+- The C2PA Content Credentials panel reads a separately C2PA-credentialed sample to demonstrate the
+  in-browser reading capability; the recovered stripped asset has no embedded manifest (that is the
+  point of recovery), so its credentials come from the repository, not from the bytes.
+- The Merkle checkpoint write to a B2 Object Lock (compliance-retention) bucket is supported (the
+  storage layer takes `object_lock` + `retain_days`, covered by tests); the credential-free live
+  deploy runs the in-memory log, so Object Lock is exercised in tests and on a one-shot verified run,
+  not on the deployed instance.
 - Hamming search is exact via native Postgres `bit_count`; pgvector HNSW `bit_hamming_ops` is an
   optional accelerator for very large indexes, not claimed as wired.
 - Known follow-ups on the deployed Postgres path: a single ingest transaction spanning the index and

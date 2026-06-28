@@ -59,7 +59,7 @@ export function StatusPanel() {
       {s && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <p className="mb-1 text-[11px] uppercase tracking-widest text-white/40">
+            <p className="mb-1 text-[11px] uppercase tracking-widest text-white/55">
               recovery self-test
             </p>
             {s.recoverySelfTest.recovered ? (
@@ -97,7 +97,7 @@ export function StatusPanel() {
 function Item({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="mb-1 text-[11px] uppercase tracking-widest text-white/40">{label}</p>
+      <p className="mb-1 text-[11px] uppercase tracking-widest text-white/55">{label}</p>
       <p className="break-all font-mono text-sm text-white/75">{value}</p>
     </div>
   );

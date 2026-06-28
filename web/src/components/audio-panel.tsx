@@ -147,7 +147,7 @@ export function AudioPanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.04] p-6 backdrop-blur-md">
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">Audio provenance</h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         A real AI-generated music clip (Suno via kie.ai). Play it, then strip it (a re-encode that
         removes any embedded credential) and watch Rooted recover its provenance by audio fingerprint.
       </p>
@@ -168,7 +168,7 @@ export function AudioPanel() {
       <div className="mt-5 min-h-24">
         <AnimatePresence mode="wait">
           {state.kind === "intro" && (
-            <Slot key="intro" className="text-white/40">
+            <Slot key="intro" className="text-white/55">
               Play the clip, then strip and recover its provenance.
             </Slot>
           )}
@@ -212,7 +212,7 @@ export function AudioPanel() {
                   </>
                 )}
               </dl>
-              <p className="mt-2 text-xs text-white/40">Provenance proves origin, not truth.</p>
+              <p className="mt-2 text-xs text-white/55">Provenance proves origin, not truth.</p>
             </Slot>
           )}
         </AnimatePresence>

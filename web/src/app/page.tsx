@@ -17,7 +17,7 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-8 px-6 py-16">
       <header className="space-y-3">
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Rooted</p>
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/55">Rooted</p>
         <h1 className="text-balance text-4xl font-semibold sm:text-5xl">
           Recover stripped C2PA provenance.
         </h1>
@@ -57,7 +57,7 @@ export default function Home() {
 
       <AgentPanel />
 
-      <p className="font-mono text-xs text-white/30">
+      <p className="font-mono text-xs text-white/50">
         Next 15, React 19, Tailwind v4, R3F, typed against the FastAPI SBR API.
       </p>
     </main>

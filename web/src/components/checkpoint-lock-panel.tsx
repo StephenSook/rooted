@@ -51,7 +51,7 @@ export function CheckpointLockPanel() {
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">
         Object Lock checkpoint
       </h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         The signed Merkle tree head, sealed to Backblaze B2 under Object Lock (compliance). Once
         written it cannot be deleted or overwritten until retention expires, so the ledger is
         tamper-evident at the storage layer.
@@ -80,7 +80,7 @@ export function CheckpointLockPanel() {
           </div>
 
           {!onB2 && (
-            <p className="mt-2 text-[11px] text-white/40">
+            <p className="mt-2 text-[11px] text-white/55">
               Set B2_BUCKET_LOCKED to a fileLock-enabled bucket on the deploy to seal the checkpoint
               to real Backblaze B2 Object Lock. The write, read-back, signature check, and
               delete-refusal are exercised against the model meanwhile.
@@ -89,27 +89,27 @@ export function CheckpointLockPanel() {
 
           <dl className="mt-3 grid gap-1 font-mono text-xs text-white/70">
             <div className="flex gap-2">
-              <dt className="w-28 shrink-0 text-white/40">object</dt>
+              <dt className="w-28 shrink-0 text-white/55">object</dt>
               <dd className="break-all text-white/70">{info.key}</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-28 shrink-0 text-white/40">retention</dt>
+              <dt className="w-28 shrink-0 text-white/55">retention</dt>
               <dd className="text-white/80">
                 {info.retentionMode} · until {formatUntil(info.retainUntil)}
               </dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-28 shrink-0 text-white/40">epoch · size</dt>
+              <dt className="w-28 shrink-0 text-white/55">epoch · size</dt>
               <dd className="text-white/80">
                 {info.checkpoint.epoch} · {info.checkpoint.treeSize} leaves
               </dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-28 shrink-0 text-white/40">root</dt>
+              <dt className="w-28 shrink-0 text-white/55">root</dt>
               <dd className="break-all text-white/60">{info.checkpoint.rootHash.slice(0, 32)}…</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-28 shrink-0 text-white/40">signature</dt>
+              <dt className="w-28 shrink-0 text-white/55">signature</dt>
               <dd className={info.signatureVerified ? "text-emerald-300" : "text-amber-400"}>
                 {info.signatureVerified ? "✓ verified" : "✗ unverified"}
                 {info.keySource === "configured" ? " (anchor key)" : " (ephemeral key)"}

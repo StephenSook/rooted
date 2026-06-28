@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rooted — C2PA provenance recovery",
+  title: "Rooted: C2PA provenance recovery",
   description:
     "Vendor-neutral C2PA Soft Binding Resolution: recover stripped provenance for AI-generated media.",
 };

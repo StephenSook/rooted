@@ -176,7 +176,7 @@ export function GeneratePanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.04] p-6 backdrop-blur-md">
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">Live loop</h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         Type a prompt. We generate a real image, sign and log it, then you strip it and watch Rooted
         recover it.
       </p>
@@ -190,7 +190,7 @@ export function GeneratePanel() {
             rows={2}
             placeholder="a lighthouse on a cliff at dusk"
             onChange={(e) => setPrompt(e.target.value)}
-            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-2 py-1 text-white/90 placeholder:text-white/25"
+            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-2 py-1 text-white/90 placeholder:text-white/55"
           />
         </label>
         <button
@@ -206,7 +206,7 @@ export function GeneratePanel() {
       <div className="mt-5 min-h-24">
         <AnimatePresence mode="wait">
           {!gen && !genPending && genError == null && (
-            <Slot key="idle" className="text-white/40">
+            <Slot key="idle" className="text-white/55">
               Awaiting a prompt.
             </Slot>
           )}
@@ -223,7 +223,7 @@ export function GeneratePanel() {
           {!gen && genError != null && (
             <Slot key="gen-error" className="text-amber-400">
               <p className="text-sm">{genError}</p>
-              <p className="mt-1 text-xs text-white/40">
+              <p className="mt-1 text-xs text-white/55">
                 You can still recover the seeded demo asset in the panel below.
               </p>
             </Slot>
@@ -303,7 +303,7 @@ export function GeneratePanel() {
                       </>
                     )}
                   </dl>
-                  <p className="mt-2 text-xs text-white/40">Provenance proves origin, not truth.</p>
+                  <p className="mt-2 text-xs text-white/55">Provenance proves origin, not truth.</p>
                 </div>
               )}
             </Slot>

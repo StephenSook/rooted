@@ -128,7 +128,7 @@ function ProviderTile({ info }: { info: ProviderInfo }) {
       <div className="font-mono text-xs text-white/70">
         <p className="text-sm font-semibold text-white/90">{info.label}</p>
         <p className="mt-1 break-all text-white/50">{info.model}</p>
-        <p className="break-all text-white/40">{info.provider}</p>
+        <p className="break-all text-white/55">{info.provider}</p>
       </div>
 
       <button
@@ -158,19 +158,19 @@ function ProviderTile({ info }: { info: ProviderInfo }) {
           <dl className="mt-1 grid gap-0.5 text-white/70">
             {score != null && (
               <div className="flex gap-2">
-                <dt className="w-20 shrink-0 text-white/40">similarity</dt>
+                <dt className="w-20 shrink-0 text-white/55">similarity</dt>
                 <dd className="text-white/80">{score}/100</dd>
               </div>
             )}
             {recoveredModel && (
               <div className="flex gap-2">
-                <dt className="w-20 shrink-0 text-white/40">model</dt>
+                <dt className="w-20 shrink-0 text-white/55">model</dt>
                 <dd className="break-all text-white/80">{recoveredModel}</dd>
               </div>
             )}
             {recoveredProvider && (
               <div className="flex gap-2">
-                <dt className="w-20 shrink-0 text-white/40">provider</dt>
+                <dt className="w-20 shrink-0 text-white/55">provider</dt>
                 <dd className="break-all text-white/80">{recoveredProvider}</dd>
               </div>
             )}
@@ -195,7 +195,7 @@ export function ProvidersPanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.03] p-5 backdrop-blur-md">
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">Vendor-neutral</h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         Recover provenance for AI media from any generator. Each image below is from a different real
         model (Google Nano Banana, Black Forest Labs Flux, Alibaba Qwen). Strip one and Rooted recovers
         it through the same pipeline.

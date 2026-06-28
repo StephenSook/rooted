@@ -77,7 +77,7 @@ export function AgentPanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.03] p-5 backdrop-blur-md">
       <h2 className="mb-3 text-xs uppercase tracking-widest text-white/50">Ask the provenance agent</h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         A Claude-powered agent answers your question by calling Rooted&apos;s live provenance tools.
         Its real tool calls appear under the reply.
       </p>
@@ -91,7 +91,7 @@ export function AgentPanel() {
             rows={2}
             placeholder="Ask about a signed asset, the transparency log, or the demo image."
             onChange={(e) => setQuestion(e.target.value)}
-            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-2 py-1 text-white/90 placeholder:text-white/25"
+            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-2 py-1 text-white/90 placeholder:text-white/55"
           />
         </label>
         <button
@@ -151,7 +151,7 @@ export function AgentPanel() {
                 <p className="font-mono text-sm text-amber-400">
                   {result.reason ?? "The agent returned a fallback response."}
                 </p>
-                <p className="text-xs text-white/40">Try one of the example questions above.</p>
+                <p className="text-xs text-white/55">Try one of the example questions above.</p>
               </div>
             )}
 
@@ -161,7 +161,7 @@ export function AgentPanel() {
                   {result.answer}
                 </p>
                 {result.model && (
-                  <p className="mt-1 text-[11px] text-white/40">answered by {result.model}</p>
+                  <p className="mt-1 text-[11px] text-white/55">answered by {result.model}</p>
                 )}
 
                 {result.toolCalls.length > 0 && (
@@ -169,7 +169,7 @@ export function AgentPanel() {
                     <button
                       type="button"
                       onClick={() => setShowTrace((v) => !v)}
-                      className="font-mono text-[11px] uppercase tracking-widest text-white/40 transition hover:text-white/70"
+                      className="font-mono text-[11px] uppercase tracking-widest text-white/55 transition hover:text-white/70"
                     >
                       {showTrace ? "hide" : "show"} tool calls ({result.toolCalls.length})
                     </button>

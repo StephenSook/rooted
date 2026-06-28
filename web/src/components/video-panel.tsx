@@ -100,7 +100,7 @@ export function VideoPanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.04] p-6 backdrop-blur-md">
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">Video provenance</h2>
-      <p className="mb-4 text-[11px] text-white/40">
+      <p className="mb-4 text-[11px] text-white/55">
         A real AI-generated video (Veo3 via kie.ai). Re-encode it in any tool and drop it below:
         Rooted recovers it by matching its keyframe fingerprints. No embedded credential needed.
       </p>
@@ -118,7 +118,7 @@ export function VideoPanel() {
         className="mt-4 flex w-full flex-col items-center gap-2 rounded-lg border border-dashed border-white/20 px-6 py-8 text-center transition hover:border-white/40 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
       >
         <span className="text-sm text-white/70">Drop a video file, or click to select</span>
-        <span className="font-mono text-xs text-white/40">
+        <span className="font-mono text-xs text-white/55">
           {fileName ?? "we match its keyframe fingerprints against the registry"}
         </span>
       </button>
@@ -147,7 +147,7 @@ export function VideoPanel() {
       <div className="mt-5 min-h-24">
         <AnimatePresence mode="wait">
           {state.kind === "intro" && (
-            <Slot key="intro" className="text-white/40">
+            <Slot key="intro" className="text-white/55">
               Drop a re-encoded clip, or recover the demo clip.
             </Slot>
           )}
@@ -189,7 +189,7 @@ export function VideoPanel() {
                   </>
                 )}
               </dl>
-              <p className="mt-2 text-xs text-white/40">Provenance proves origin, not truth.</p>
+              <p className="mt-2 text-xs text-white/55">Provenance proves origin, not truth.</p>
             </Slot>
           )}
         </AnimatePresence>

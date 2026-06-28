@@ -31,6 +31,7 @@ from rooted_api.agent import router as agent_router
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_audio_demo, seed_demo, seed_video_demo
 from rooted_api.generate import router as generate_router
+from rooted_api.lineage import router as lineage_router
 from rooted_api.sbr import (
     get_audio_resolver,
     get_log,
@@ -97,6 +98,7 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
     app.include_router(generate_router)
     app.include_router(status_router)
     app.include_router(agent_router)
+    app.include_router(lineage_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

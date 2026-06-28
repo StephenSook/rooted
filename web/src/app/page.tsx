@@ -1,3 +1,4 @@
+import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { GeneratePanel } from "@/components/generate-panel";
@@ -44,6 +45,8 @@ export default function Home() {
       <SupportedAlgorithms />
 
       <StatusPanel />
+
+      <AgentPanel />
 
       <p className="font-mono text-xs text-white/30">
         Next 15, React 19, Tailwind v4, R3F, typed against the FastAPI SBR API.

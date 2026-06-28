@@ -15,7 +15,7 @@ services:
     branch: main
     autoDeploy: true
     healthCheckPath: /health
-    buildCommand: pip install uv && uv sync --locked --package rooted-api --no-dev --extra genblaze
+    buildCommand: pip install uv && uv sync --locked --package rooted-api --no-dev
     startCommand: .venv/bin/uvicorn rooted_api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ROOTED_DEMO_SEED

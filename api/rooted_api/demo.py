@@ -28,6 +28,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from PIL import Image
 
+from rooted_provenance.audio import audio_to_image
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest, SoftBinding, canonical_json
 from rooted_provenance.resolver import Resolver
@@ -54,6 +55,29 @@ _PRIMARY_PROVENANCE = {
     "prompt": _PRIMARY_PROMPT,
 }
 _FIXTURE_PROVENANCE = {"model": "rooted-demo-fixture", "note": "seeded demo asset"}
+
+# The demo AUDIO asset: a real Suno V5 instrumental clip (kie.ai), trimmed to 10s and bundled here.
+# Recovery is by a perceptual audio fingerprint (rooted_provenance.audio), the audio analog of PDQ.
+_AUDIO_ASSET_PATH = Path(__file__).parent / "assets" / "demo-audio.mp3"
+DEMO_AUDIO_MANIFEST_ID = "urn:c2pa:demo-audio-0000-0000-0000-000000000001"
+DEMO_AUDIO_WATERMARK_ID = "DEMOA"
+_AUDIO_PROVENANCE = {
+    "model": "suno-v5",
+    "provider": "kie.ai-suno",
+    "generator": "kie.ai",
+    "title": "Glass Rain (instrumental)",
+}
+_audio_bytes: bytes | None = None
+
+
+def audio_demo_bytes() -> bytes:
+    """The demo audio asset's exact bytes (a real Suno V5 clip, kie.ai, trimmed to 10s). Cached on
+    first read. These bytes are what /demo/audio serves and what the audio fingerprint is
+    computed over, so the live audio recovery self-matches on genuine AI-generated audio."""
+    global _audio_bytes
+    if _audio_bytes is None:
+        _audio_bytes = _AUDIO_ASSET_PATH.read_bytes()
+    return _audio_bytes
 
 
 def primary_manifest() -> Manifest:
@@ -157,12 +181,48 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
         )
 
 
+def seed_audio_demo(
+    audio_resolver: Resolver, log: TransparencyLog, storage: Storage | None = None
+) -> None:
+    """Register the demo AUDIO asset for recovery: a real Suno-generated clip recovered by its
+    perceptual audio fingerprint. Uses a SEPARATE audio resolver so audio never cross-matches an
+    image, while sharing the transparency log and B2. Idempotent: it re-registers the asset in the
+    (in-memory) audio resolver on each startup but appends to the shared log only once."""
+    if audio_resolver.get_manifest(DEMO_AUDIO_MANIFEST_ID) is not None:
+        return
+    audio_bytes = audio_demo_bytes()
+    key, _pub = generate_keypair()
+    manifest = Manifest(
+        manifest_id=DEMO_AUDIO_MANIFEST_ID,
+        asset_sha256=hashlib.sha256(audio_bytes).hexdigest(),
+        created_at=_CREATED_AT,
+        system_provenance=_AUDIO_PROVENANCE,
+        soft_bindings=[],  # the audio fingerprint is internal (like PDQ), not a registered alg
+    )
+    # Register the spectrogram of the audio: the same Resolver/PDQ machinery, in the audio index.
+    audio_resolver.register(manifest, audio_to_image(audio_bytes), DEMO_AUDIO_WATERMARK_ID)
+    # Append to the (possibly persistent) log only if this manifest is not already a leaf, so a
+    # restart against a persistent log re-registers the asset for recovery without a duplicate leaf.
+    if log.index_for(manifest.manifest_id) is None:
+        log.append(manifest.manifest_id, manifest.canonical_hash())
+    if storage is not None:
+        storage.put(asset_key(manifest.asset_sha256), audio_bytes)
+        storage.put(manifest_key(DEMO_AUDIO_MANIFEST_ID), canonical_json(manifest.model_dump()))
+        storage.put(signature_key(DEMO_AUDIO_MANIFEST_ID), sign_manifest(manifest, key))
+
+
 # include_in_schema=False: these are demo aids, not part of the spec-defined SBR contract, so they
 # stay out of the OpenAPI surface (and the schemathesis contract test); the UI fetches them.
 @router.get("/demo/sample", include_in_schema=False)
 async def demo_sample() -> Response:
     """Serve the demo asset bytes so the UI can recover it. No provenance data; safe unauthed."""
     return Response(content=demo_sample_bytes(), media_type="image/jpeg")
+
+
+@router.get("/demo/audio", include_in_schema=False)
+async def demo_audio() -> Response:
+    """Serve the demo audio bytes so the UI can play it and recover it. No provenance data."""
+    return Response(content=audio_demo_bytes(), media_type="audio/mpeg")
 
 
 @router.get("/demo/signed-manifest", include_in_schema=False)

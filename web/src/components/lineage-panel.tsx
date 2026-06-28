@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
+import { useInView } from "@/lib/use-in-view";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion-pref";
 import type { GLink, GNode } from "./three/lineage-graph";
 
@@ -40,6 +41,7 @@ const CHIP_COLOR: Record<NodeKind, string> = {
 
 export function LineagePanel() {
   const reduced = usePrefersReducedMotion();
+  const [graphRef, inView] = useInView<HTMLDivElement>();
   const [data, setData] = useState<LineageResponse | null>(null);
   const [error, setError] = useState(false);
 
@@ -103,11 +105,12 @@ export function LineagePanel() {
 
           {graphNodes.length > 0 && (
             <div
+              ref={graphRef}
               className="h-72 w-full"
               role="img"
               aria-label="3D provenance lineage graph; the same nodes and relationships are listed below."
             >
-              <LineageGraph nodes={graphNodes} links={graphLinks} reduced={reduced} />
+              {inView && <LineageGraph nodes={graphNodes} links={graphLinks} reduced={reduced} />}
             </div>
           )}
 

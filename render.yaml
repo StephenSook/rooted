@@ -54,3 +54,21 @@ services:
         value: "5"
       - key: ROOTED_GEN_GLOBAL_DAY
         value: "50"
+      # Rooted's MCP server is mounted in-process at /mcp (no env needed, always on): a judge can
+      # connect their own agent to https://rooted-api-ubvc.onrender.com/mcp and call verify_asset,
+      # recover_manifest, and query_transparency_log over the same vendor-neutral API.
+      #
+      # Live provenance agent (POST /demo/agent): a Claude tool-use loop that audits provenance over
+      # Rooted's live tools and returns its real tool-call trace. Opt-in and hard-capped (per-IP/day,
+      # global/day no-refund ceiling, in-flight, turn cap, small max_tokens). It is OFF until
+      # ANTHROPIC_API_KEY (sync:false) is set in the dashboard; until then it serves an honest
+      # disabled response that still points at the reachable /mcp endpoint. Cost: claude-opus-4-8 at
+      # capped tokens; the global cap counts every run, so 50/day is a hard daily ceiling.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ROOTED_AGENT_MODEL
+        value: "claude-opus-4-8"
+      - key: ROOTED_AGENT_PER_IP_DAY
+        value: "5"
+      - key: ROOTED_AGENT_GLOBAL_DAY
+        value: "50"

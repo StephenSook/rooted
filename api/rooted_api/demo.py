@@ -24,13 +24,19 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from PIL import Image
 
 from rooted_provenance.audio import audio_to_image
 from rooted_provenance.merkle import TransparencyLog
-from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest, SoftBinding, canonical_json
+from rooted_provenance.models import (
+    ALG_TRUSTMARK_P,
+    CamelModel,
+    Manifest,
+    SoftBinding,
+    canonical_json,
+)
 from rooted_provenance.resolver import Resolver
 from rooted_provenance.signing import generate_keypair, sign_manifest
 from rooted_provenance.video import video_frames
@@ -266,8 +272,139 @@ def seed_video_demo(
         storage.put(signature_key(DEMO_VIDEO_MANIFEST_ID), sign_manifest(manifest, key))
 
 
+# --- Multi-provider provenance demos: real generations from several distinct labs (via kie.ai), ---
+# each run through Rooted's spine (sign + PDQ fingerprint + Merkle log + B2), so the vendor-neutral
+# claim is concrete: Rooted recovers AI media regardless of which lab generated it. The provenance
+# names the REAL model + provider for each (no synthetic labels); the images are committed because
+# the kie.ai result URLs expire.
+_PROVIDERS: list[dict[str, Any]] = [
+    {
+        "slug": "nano-banana",
+        "manifest_id": "urn:c2pa:demo-provider-nano-banana-000000000001",
+        "watermark_id": "PNANO",
+        "asset": "provider-nano-banana.jpg",
+        "label": "Nano Banana 2",
+        "prompt": (
+            "a glowing bioluminescent oak tree with luminous roots wrapping a floating crystal "
+            "island, deep space nebula background"
+        ),
+        "provenance": {
+            "model": "nano-banana-2",
+            "provider": "kie.ai-nano-banana",
+            "generator": "kie.ai",
+        },
+    },
+    {
+        "slug": "flux",
+        "manifest_id": "urn:c2pa:demo-provider-flux-000000000001",
+        "watermark_id": "PFLUX",
+        "asset": "provider-flux.jpg",
+        "label": "Flux 2 Pro",
+        "prompt": (
+            "an ancient oak tree growing from a shattered moon fragment drifting in a violet galaxy"
+        ),
+        "provenance": {
+            "model": "flux-2/pro-text-to-image",
+            "provider": "kie.ai-flux",
+            "generator": "kie.ai",
+        },
+    },
+    {
+        "slug": "qwen",
+        "manifest_id": "urn:c2pa:demo-provider-qwen-000000000001",
+        "watermark_id": "PQWEN",
+        "asset": "provider-qwen.jpg",
+        "label": "Qwen Image",
+        "prompt": (
+            "a lone tree of light on a small floating earth, surrounded by orbiting glowing seeds"
+        ),
+        "provenance": {
+            "model": "qwen/text-to-image",
+            "provider": "kie.ai-qwen",
+            "generator": "kie.ai",
+        },
+    },
+]
+_provider_bytes: dict[str, bytes] = {}
+
+
+def _provider_by_slug(slug: str) -> dict[str, Any] | None:
+    return next((p for p in _PROVIDERS if p["slug"] == slug), None)
+
+
+def provider_demo_bytes(slug: str) -> bytes | None:
+    """The bundled bytes of a provider demo asset (a real generation), cached. None if unknown."""
+    if slug not in _provider_bytes:
+        provider = _provider_by_slug(slug)
+        if provider is None:
+            return None
+        _provider_bytes[slug] = (Path(__file__).parent / "assets" / provider["asset"]).read_bytes()
+    return _provider_bytes[slug]
+
+
+def seed_providers(
+    resolver: Resolver, log: TransparencyLog, storage: Storage | None = None
+) -> None:
+    """Register the multi-provider demo assets (real generations from several labs) for recovery, so
+    Rooted can recover provenance for AI media from any of them. Each is signed + PDQ-indexed +
+    logged + written to B2 with honest provenance naming the real model + provider. Idempotent."""
+    if resolver.get_manifest(_PROVIDERS[0]["manifest_id"]) is not None:
+        return
+    key, _pub = generate_keypair()
+    for provider in _PROVIDERS:
+        data = provider_demo_bytes(provider["slug"])
+        if data is None:
+            continue
+        _register(
+            resolver,
+            log,
+            provider["manifest_id"],
+            provider["watermark_id"],
+            data,
+            storage,
+            key,
+            provider["provenance"],
+        )
+
+
+class ProviderInfo(CamelModel):
+    """One multi-provider demo: a real generation Rooted can recover, with honest provenance."""
+
+    slug: str
+    label: str
+    model: str
+    provider: str
+    prompt: str
+    manifest_id: str
+
+
 # include_in_schema=False: these are demo aids, not part of the spec-defined SBR contract, so they
 # stay out of the OpenAPI surface (and the schemathesis contract test); the UI fetches them.
+@router.get("/demo/providers", response_model=list[ProviderInfo], include_in_schema=False)
+async def demo_providers() -> list[ProviderInfo]:
+    """List the multi-provider demo assets (real generations from several labs) for the gallery."""
+    return [
+        ProviderInfo(
+            slug=p["slug"],
+            label=p["label"],
+            model=p["provenance"]["model"],
+            provider=p["provenance"]["provider"],
+            prompt=p["prompt"],
+            manifest_id=p["manifest_id"],
+        )
+        for p in _PROVIDERS
+    ]
+
+
+@router.get("/demo/provider/{slug}", include_in_schema=False)
+async def demo_provider_image(slug: str) -> Response:
+    """Serve a provider demo asset's bytes so the UI can recover it. No provenance data."""
+    data = provider_demo_bytes(slug)
+    if data is None:
+        raise HTTPException(status_code=404, detail="unknown provider")
+    return Response(content=data, media_type="image/jpeg")
+
+
 @router.get("/demo/sample", include_in_schema=False)
 async def demo_sample() -> Response:
     """Serve the demo asset bytes so the UI can recover it. No provenance data; safe unauthed."""

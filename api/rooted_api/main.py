@@ -19,6 +19,7 @@ from rooted_api.demo import seed_demo
 from rooted_api.generate import router as generate_router
 from rooted_api.sbr import get_log, get_resolver, get_storage
 from rooted_api.sbr import router as sbr_router
+from rooted_api.status import router as status_router
 
 
 @asynccontextmanager
@@ -44,6 +45,7 @@ app = FastAPI(title="Rooted SBR API", version="0.1.0", lifespan=lifespan)
 app.include_router(sbr_router)
 app.include_router(demo_router)
 app.include_router(generate_router)
+app.include_router(status_router)
 
 
 @app.get("/health")

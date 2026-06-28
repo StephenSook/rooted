@@ -224,6 +224,18 @@ def _enabled() -> bool:
     return os.environ.get("ROOTED_LIVE_GENERATE") == "1"
 
 
+def config() -> dict[str, Any]:
+    """A non-secret snapshot of the generation configuration for the status surface: whether live
+    generation is enabled and configured, and the current caps. Exposes no key or provider."""
+    return {
+        "enabled": _enabled(),
+        "configured": get_generator() is not None,
+        "per_ip_per_day": _limiter._per_ip,
+        "global_per_day": _limiter._global,
+        "max_in_flight": _limiter._max_in_flight,
+    }
+
+
 def _client_ip(request: Request) -> str:
     """The caller's IP for per-visitor rate limiting. Render terminates TLS at a proxy and sets
     X-Forwarded-For, so trust its left-most entry (the original client) when present, else the

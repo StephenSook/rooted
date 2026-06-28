@@ -1,6 +1,7 @@
 import { ContentCredentials } from "@/components/content-credentials";
 import { GeneratePanel } from "@/components/generate-panel";
 import { RecoverPanel } from "@/components/recover-panel";
+import { StatusPanel } from "@/components/status-panel";
 import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
 import { TamperPanel } from "@/components/tamper-panel";
@@ -35,6 +36,8 @@ export default function Home() {
       <MerkleExplorer />
 
       <SupportedAlgorithms />
+
+      <StatusPanel />
 
       <p className="font-mono text-xs text-white/30">
         Next 15, React 19, Tailwind v4, R3F, typed against the FastAPI SBR API.

@@ -20,7 +20,12 @@ from typing import Any
 import schemathesis
 from hypothesis import settings
 
-from rooted_api.main import app
+from rooted_api.main import create_app
+
+# Build the app without the MCP mount: schemathesis's ASGI transport runs the app lifespan but does
+# not support a lifespan that sets scope "state" (the FastMCP streamable-HTTP session manager needs
+# it). The MCP mount is not part of the OpenAPI surface, so the SBR contract under test is the same.
+app = create_app(mount_mcp=False)
 
 schema = schemathesis.openapi.from_asgi("/openapi.json", app).exclude(method="POST")
 

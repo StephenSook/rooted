@@ -18,6 +18,7 @@ import base64
 import binascii
 import os
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastmcp import FastMCP
@@ -25,6 +26,10 @@ from fastmcp import FastMCP
 mcp: FastMCP = FastMCP("Rooted")
 
 _DEFAULT_BASE_URL = "http://localhost:8000"
+# Reject an oversized image before it is decoded. /mcp is reachable unauthenticated, and the tools
+# decode agent-supplied base64 in-process, so cap the ENCODED length up front (the base64 expansion
+# of the SBR's 25 MB upload cap) so a giant string cannot be materialized and decoded first.
+_MAX_B64_LEN = 25 * 1024 * 1024 * 4 // 3
 
 
 class SbrClient:
@@ -48,7 +53,8 @@ class SbrClient:
         return data
 
     async def manifest(self, manifest_id: str) -> dict[str, Any] | None:
-        r = await self._c.get(f"/manifests/{manifest_id}")
+        # Percent-encode the id so httpx cannot normalize dot-segments into another route.
+        r = await self._c.get(f"/manifests/{quote(manifest_id, safe='')}")
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -62,7 +68,8 @@ class SbrClient:
         return data
 
     async def proof(self, manifest_id: str) -> dict[str, Any] | None:
-        r = await self._c.get(f"/transparency/proof/{manifest_id}")
+        # Percent-encode the id (see manifest) so a crafted id cannot reach another route.
+        r = await self._c.get(f"/transparency/proof/{quote(manifest_id, safe='')}")
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -98,6 +105,8 @@ class SbrInputError(Exception):
 
 
 def _decode_image(image_base64: str) -> bytes:
+    if len(image_base64) > _MAX_B64_LEN:
+        raise SbrInputError("image_base64 exceeds the size limit")
     try:
         return base64.b64decode(image_base64, validate=True)
     except binascii.Error as exc:

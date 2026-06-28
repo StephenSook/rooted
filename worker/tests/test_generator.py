@@ -63,7 +63,7 @@ def test_asset_bytes_rejects_internal_host() -> None:
 def test_generate_uses_gmi_when_it_succeeds() -> None:
     gen = GenblazeGenerator("gmi-key", gmi_model="seedream", openai_api_key="oai-key")
     sentinel = _result("seedream", "gmicloud-image")
-    gen._generate_gmi = lambda prompt: sentinel  # type: ignore[method-assign,assignment]
+    gen._generate_gmi = lambda prompt: sentinel  # type: ignore[method-assign]
 
     def _should_not_call(prompt: str) -> GenerationResult:
         raise AssertionError("OpenAI must not be called when GMICloud succeeds")
@@ -80,7 +80,7 @@ def test_generate_falls_back_to_openai_when_gmi_fails() -> None:
         raise RuntimeError("GMICloud down")
 
     gen._generate_gmi = _boom  # type: ignore[method-assign]
-    gen._generate_openai = lambda prompt: sentinel  # type: ignore[method-assign,assignment]
+    gen._generate_openai = lambda prompt: sentinel  # type: ignore[method-assign]
     assert gen.generate("a fox") is sentinel
 
 

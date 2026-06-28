@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import base64
 import io
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import httpx
 import numpy as np
@@ -38,7 +39,7 @@ def _asgi_client() -> httpx.AsyncClient:
 
 
 @pytest.fixture(autouse=True)
-def _reset_client() -> AsyncIterator[None]:
+def _reset_client() -> Iterator[None]:
     # Reset the module-global SBR client after every test so a fixtureless test never reuses a stale
     # (closed) client or silently opens a real network client.
     yield
@@ -196,8 +197,8 @@ class _MatchWithoutManifestClient(SbrClient):
     def __init__(self) -> None:  # no httpx client needed
         pass
 
-    async def matches_by_content(self, image: bytes) -> dict:
+    async def matches_by_content(self, image: bytes) -> dict[str, Any]:
         return {"matches": [{"manifestId": "urn:c2pa:ghost", "similarityScore": 100}]}
 
-    async def manifest(self, manifest_id: str) -> dict | None:
+    async def manifest(self, manifest_id: str) -> dict[str, Any] | None:
         return None

@@ -104,7 +104,7 @@ Redis for local Postgres-backed runs.
 ```bash
 uv run ruff check . && uv run ruff format --check .   # CI gates on these
 uv run pytest                                         # incl. real-Postgres tests via pgserver
-uv run mypy .                                         # local (not a CI gate yet)
+uv run mypy .                                         # strict; CI gates on this too
 uvx schemathesis run http://localhost:8000/openapi.json --checks all   # SBR contract
 uvx locust -f load/locustfile.py --host http://localhost:8000 --headless -u 20 -r 5 -t 15s  # load
 ```

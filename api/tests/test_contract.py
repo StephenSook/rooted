@@ -15,6 +15,8 @@ and exercised directly in the unit tests.
 
 from __future__ import annotations
 
+from typing import Any
+
 import schemathesis
 from hypothesis import settings
 
@@ -25,5 +27,5 @@ schema = schemathesis.openapi.from_asgi("/openapi.json", app).exclude(method="PO
 
 @schema.parametrize()
 @settings(max_examples=25, deadline=None, derandomize=True)
-def test_sbr_api_conforms_to_its_openapi(case: schemathesis.Case) -> None:
+def test_sbr_api_conforms_to_its_openapi(case: schemathesis.Case[Any]) -> None:
     case.call_and_validate()

@@ -40,7 +40,9 @@ def _unwire() -> None:
     sbr.set_log(None)
 
 
-async def _ingest(client: httpx.AsyncClient, manifest_id: str, watermark_id: str, key: str | None):
+async def _ingest(
+    client: httpx.AsyncClient, manifest_id: str, watermark_id: str, key: str | None
+) -> httpx.Response:
     headers = {"X-Ingest-Key": key} if key is not None else {}
     return await client.post(
         "/ingest",
@@ -77,7 +79,8 @@ async def test_ingest_non_ascii_key_is_401_not_500(monkeypatch: pytest.MonkeyPat
                 "/ingest",
                 files={"file": ("a.png", _png_bytes(), "image/png")},
                 data={"manifest_id": "urn:c2pa:u", "watermark_id": "WMU"},
-                headers={"X-Ingest-Key": "café-key".encode("latin-1")},
+                # Deliberately raw Latin-1 bytes (not str) to drive the non-ASCII-header 401 path.
+                headers={"X-Ingest-Key": "café-key".encode("latin-1")},  # type: ignore[arg-type]
             )
             assert r.status_code == 401
     finally:

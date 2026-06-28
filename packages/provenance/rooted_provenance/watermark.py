@@ -7,7 +7,7 @@ separately by the Gate 1 kill experiment harness.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
 
 from PIL import Image
 
@@ -60,7 +60,7 @@ class TrustMarkWatermarker:
                 f"watermark id {secret!r} exceeds the BCH_SUPER text capacity of "
                 f"{self._max_chars} chars; it would be silently truncated"
             )
-        return self._tm.encode(image.convert("RGB"), secret, MODE="text")
+        return cast(Image.Image, self._tm.encode(image.convert("RGB"), secret, MODE="text"))
 
     def decode(self, image: Image.Image) -> tuple[str | None, float]:
         secret, present, _schema = self._tm.decode(image.convert("RGB"), MODE="text")

@@ -49,3 +49,33 @@ testpaths = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+# Third-party modules that ship no type stubs / py.typed marker, or that are optional extras not
+# installed in the default (CI) sync. Ignoring missing imports for ONLY these keeps strict checking
+# everywhere else. Our own workspace packages ship a py.typed marker, so they are never ignored here.
+[[tool.mypy.overrides]]
+module = [
+    "b2sdk.*",
+    "c2pa",
+    "pdqhash",
+    "pymerkle",
+    "trustmark",
+    "genblaze_core",
+    "genblaze_gmicloud",
+    "genblaze_openai",
+    "locust",
+]
+ignore_missing_imports = true
+
+# pgserver ships a py.typed marker but re-exports get_server without the explicit `as` form, so
+# strict's no_implicit_reexport hides it. Re-enable implicit re-export for this one dependency.
+[[tool.mypy.overrides]]
+module = "pgserver"
+implicit_reexport = true
+
+# The load smoke test subclasses locust's HttpUser and uses its @task decorator, both of which are
+# Any because locust is untyped. Relax only those two strict flags for this standalone script.
+[[tool.mypy.overrides]]
+module = "locustfile"
+disallow_subclassing_any = false
+disallow_untyped_decorators = false

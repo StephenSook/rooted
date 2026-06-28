@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_demo
+from rooted_api.generate import router as generate_router
 from rooted_api.sbr import get_log, get_resolver, get_storage
 from rooted_api.sbr import router as sbr_router
 
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Rooted SBR API", version="0.1.0", lifespan=lifespan)
 app.include_router(sbr_router)
 app.include_router(demo_router)
+app.include_router(generate_router)
 
 
 @app.get("/health")

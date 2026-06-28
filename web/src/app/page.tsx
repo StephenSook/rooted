@@ -1,5 +1,6 @@
 import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
+import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { GeneratePanel } from "@/components/generate-panel";
 import { LineagePanel } from "@/components/lineage-panel";
@@ -47,6 +48,8 @@ export default function Home() {
       <LineagePanel />
 
       <MerkleExplorer />
+
+      <CheckpointLockPanel />
 
       <SupportedAlgorithms />
 

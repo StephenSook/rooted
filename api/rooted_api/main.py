@@ -28,6 +28,8 @@ from httpx import ASGITransport
 from starlette.types import Lifespan
 
 from rooted_api.agent import router as agent_router
+from rooted_api.checkpoint import router as checkpoint_router
+from rooted_api.checkpoint import seal_startup_checkpoint
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_audio_demo, seed_demo, seed_providers, seed_video_demo
 from rooted_api.generate import router as generate_router
@@ -61,6 +63,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_video_demo(get_video_resolver(), get_log(), get_storage())
         # The multi-provider image demos share the image resolver + the transparency log + B2.
         seed_providers(get_resolver(), get_log(), get_storage())
+    # Seal the current signed tree head to the Object-Lock bucket (B2_BUCKET_LOCKED), so the
+    # immutable audit anchor exists before any reader asks. After any seeding, so it captures the
+    # seeded tree size. Best-effort and only acts when a locked bucket is configured: a missing
+    # capability never fails the deploy (the surface degrades to the labeled in-memory model).
+    seal_startup_checkpoint()
     # Wire the mounted MCP server's tools to THIS app's SBR routes through an in-process ASGI
     # client: no network hop and no credentials, the same path the test suite uses. So /mcp and the
     # front end consume the exact same vendor-neutral API.
@@ -101,6 +108,7 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
     app.include_router(status_router)
     app.include_router(agent_router)
     app.include_router(lineage_router)
+    app.include_router(checkpoint_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

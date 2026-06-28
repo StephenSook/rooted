@@ -130,10 +130,14 @@ so the live demo will not fall over under concurrent judges.
 - The C2PA Content Credentials panel reads a separately C2PA-credentialed sample to demonstrate the
   in-browser reading capability; the recovered stripped asset has no embedded manifest (that is the
   point of recovery), so its credentials come from the repository, not from the bytes.
-- The Merkle checkpoint write to a B2 Object Lock (compliance-retention) bucket is supported (the
-  storage layer takes `object_lock` + `retain_days`, covered by tests); the credential-free live
-  deploy runs the in-memory log, so Object Lock is exercised in tests and on a one-shot verified run,
-  not on the deployed instance.
+- The Merkle checkpoint is sealed to a B2 Object Lock (compliance-retention) bucket: set
+  `B2_BUCKET_LOCKED` to a fileLock-enabled bucket (Object Lock must be enabled at bucket creation,
+  and the app key needs `writeFileRetentions` + `readFileRetentions`) and the deploy seals the signed
+  tree head once at startup and reads it back, reporting the real compliance retain-until at
+  `GET /transparency/checkpoint/object`. Without a locked bucket the same write / read-back / signature
+  / delete-refusal contract runs against the in-memory model and the surface is labeled `modeled`, so
+  it never passes as a real B2 seal. The lock behavior is covered by tests (the in-memory contract and
+  the real b2sdk `FileRetentionSetting` shape).
 - Hamming search is exact via native Postgres `bit_count`; pgvector HNSW `bit_hamming_ops` is an
   optional accelerator for very large indexes, not claimed as wired.
 - Known follow-ups on the deployed Postgres path: a single ingest transaction spanning the index and

@@ -3,10 +3,11 @@
     uv run uvicorn rooted_api.main:app --port 8000        # one shell
     uvx locust -f load/locustfile.py --host http://localhost:8000 --headless -u 20 -r 5 -t 15s
 
-It hits only safe GET endpoints (no DB writes, no generation): liveness, supportedAlgorithms,
-byBinding (the empty-match read path), a 404 manifest, and the signed checkpoint. Watch the p95
-latency and failure rate so the live demo will not fall over under concurrent judges. locust is run
-via uvx so it is not a project dependency.
+It hits the read endpoints (liveness, supportedAlgorithms, byBinding, a 404 manifest, the signed
+checkpoint) AND the real recovery path the demo actually exercises: POST /matches/byContent, which
+decodes the uploaded image and computes a PDQ hash (CPU-bound, offloaded to the threadpool) but
+writes nothing. Watch the p95 latency and failure rate so the live demo will not fall over under
+concurrent judges. locust is run via uvx so it is not a project dependency.
 """
 
 from locust import HttpUser, between, task
@@ -18,6 +19,18 @@ class SbrReader(HttpUser):
     @task(3)
     def health(self) -> None:
         self.client.get("/health")
+
+    @task(4)
+    def matches_by_content(self) -> None:
+        # The real recovery path a room of judges hits at once: fetch the demo asset, then POST it
+        # to /matches/byContent (decode + PDQ). This is the CPU-bound path the GET tasks miss.
+        sample = self.client.get("/demo/sample")
+        if sample.status_code != 200:
+            return
+        self.client.post(
+            "/matches/byContent",
+            files={"file": ("sample.jpg", sample.content, "image/jpeg")},
+        )
 
     @task(3)
     def supported_algorithms(self) -> None:

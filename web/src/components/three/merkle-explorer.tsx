@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 
 import { $api } from "@/lib/api/client";
+import { useInView } from "@/lib/use-in-view";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion-pref";
 import type { GLink, GNode } from "./merkle-graph";
 
@@ -45,6 +46,7 @@ function buildTree(entries: Entry[], rootHash: string): { nodes: GNode[]; links:
 
 export function MerkleExplorer() {
   const reduced = usePrefersReducedMotion();
+  const [graphRef, inView] = useInView<HTMLDivElement>();
   const { data, error, isPending } = $api.useQuery("get", "/transparency/log");
   const graph = useMemo(
     () => (data ? buildTree(data.entries ?? [], data.rootHash) : { nodes: [], links: [] }),
@@ -63,11 +65,12 @@ export function MerkleExplorer() {
       {data && graph.nodes.length > 0 && (
         <>
           <div
+            ref={graphRef}
             className="h-80 w-full"
             role="img"
             aria-label="3D Merkle transparency tree; the tree size and root are listed below."
           >
-            <MerkleGraph nodes={graph.nodes} links={graph.links} reduced={reduced} />
+            {inView && <MerkleGraph nodes={graph.nodes} links={graph.links} reduced={reduced} />}
           </div>
           <dl className="mt-2 grid gap-1 font-mono text-xs text-white/60">
             <div className="flex gap-3">

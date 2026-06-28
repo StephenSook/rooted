@@ -451,21 +451,23 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
     if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
-    # No await between these reads, so the proof, the root, and the checkpoint share one tree state.
-    size = log.size
-    root = log.root(size)
-    proof = log.prove_inclusion(index, size)
+    # signed_proof computes the proof, the root, and the signed checkpoint under one lock, so the
+    # proof's root and the checkpoint's root describe the same tree state (no divergence under a
+    # concurrent append) and the CPU-bound proof runs off the event loop.
+    size, root, proof, checkpoint, verified = await run_in_threadpool(
+        log.signed_proof, index, _signing_key, datetime.now(UTC).isoformat()
+    )
     return InclusionProofResponse(
         manifest_id=manifest_id,
-        # index is the pymerkle 1-based position (used for prove/verify above); the response field
-        # is 0-based to agree with GET /transparency/log, so a client can cross-reference the two.
+        # index is the pymerkle 1-based position (used for prove/verify); the response field is
+        # 0-based to agree with GET /transparency/log, so a client can cross-reference the two.
         leaf_index=index - 1,
         leaf_hash=manifest.canonical_hash(),
         tree_size=size,
         root_hash=root.hex(),
         proof=proof.serialize(),
-        checkpoint=_signed_head(),
+        checkpoint=checkpoint,
         public_key_hex=_public_key_hex(),
         key_source=_key_source,
-        server_verified=log.verify_inclusion(index, proof, root),
+        server_verified=verified,
     )

@@ -15,7 +15,7 @@ services:
     branch: main
     autoDeploy: true
     healthCheckPath: /health
-    buildCommand: pip install uv && uv sync --locked --package rooted-api --no-dev
+    buildCommand: pip install uv && uv sync --locked --package rooted-api --no-dev --extra genblaze
     startCommand: .venv/bin/uvicorn rooted_api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ROOTED_DEMO_SEED
@@ -36,3 +36,21 @@ services:
       # proofs. Required for a stable transparency log through the judging window.
       - key: ED25519_PRIVATE_KEY_HEX
         sync: false
+      # Live generation (POST /demo/generate): a visitor generates a real image on their own prompt,
+      # which Rooted signs, stores on B2, indexes, and logs, then they strip and recover it. The
+      # endpoint is hard-capped (per-IP/day, global/day, in-flight) and falls back to the seeded
+      # asset on a provider error or when the budget is spent, so it never over-spends or breaks the
+      # loop. ROOTED_LIVE_GENERATE=1 turns it on; until GMI_CLOUD_API_KEY (sync:false) is set it
+      # honestly serves the seeded asset. Cost: GMI only (no OPENAI_API_KEY here, so one paid
+      # provider call per attempt) at ~$0.035/gen; the global cap counts every attempt, so 50/day is
+      # a hard ceiling of roughly $1.75/day.
+      - key: ROOTED_LIVE_GENERATE
+        value: "1"
+      - key: ROOTED_GMI_MODEL
+        value: "seedream-5.0-lite"
+      - key: GMI_CLOUD_API_KEY
+        sync: false
+      - key: ROOTED_GEN_PER_IP_DAY
+        value: "5"
+      - key: ROOTED_GEN_GLOBAL_DAY
+        value: "50"

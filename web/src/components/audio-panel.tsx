@@ -152,7 +152,7 @@ export function AudioPanel() {
         removes any embedded credential) and watch Rooted recover its provenance by audio fingerprint.
       </p>
 
-      <audio controls src="/api/demo/audio" className="w-full">
+      <audio controls preload="none" src="/api/demo/audio" className="w-full">
         Your browser cannot play the demo clip.
       </audio>
 

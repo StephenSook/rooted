@@ -83,6 +83,13 @@ class TransparencyLog:
         meant to be auditable, so exposing the append-ordered leaves is by design."""
         return [(i, mid, leaf_hash) for i, (mid, leaf_hash) in enumerate(self._store.all())]
 
+    def snapshot(self) -> tuple[list[tuple[int, str, str]], int, bytes]:
+        """The entries, tree size, and root read in one synchronous pass, so the leaf list, the
+        size, and the root cannot disagree under a concurrent append (no await between reads)."""
+        entries = self.entries()
+        size = self.size
+        return entries, size, self.root(size)
+
     def close(self) -> None:
         """Release the leaf store's resources (e.g. a Postgres pool); a no-op for in-memory."""
         close = getattr(self._store, "close", None)

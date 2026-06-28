@@ -48,9 +48,12 @@ _INSERT_MANIFEST = (
     "INSERT INTO manifests (manifest_id, body) VALUES (%s, %s) "
     "ON CONFLICT (manifest_id) DO UPDATE SET body = EXCLUDED.body"
 )
+# A watermark binding is immutable: DO NOTHING (not DO UPDATE) so a second ingest can never
+# re-point an existing watermark id to a different manifest and poison recovery. The API layer
+# rejects a re-point with a 409 before it reaches here; this is the defense-in-depth at the store.
 _INSERT_BINDING = (
     "INSERT INTO watermark_bindings (watermark_id, manifest_id) VALUES (%s, %s) "
-    "ON CONFLICT (watermark_id) DO UPDATE SET manifest_id = EXCLUDED.manifest_id"
+    "ON CONFLICT (watermark_id) DO NOTHING"
 )
 _INSERT_FINGERPRINT = "INSERT INTO perceptual_hashes (manifest_id, pdq) VALUES (%s, %s::bit(256))"
 

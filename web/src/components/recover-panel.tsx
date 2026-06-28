@@ -174,7 +174,7 @@ export function RecoverPanel() {
   );
 }
 
-function Slot({
+export function Slot({
   children,
   className,
 }: {
@@ -194,7 +194,7 @@ function Slot({
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+export function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-3">
       <dt className="w-24 shrink-0 text-white/40">{k}</dt>

@@ -9,11 +9,19 @@ dependencies = [
     "python-multipart>=0.0.9",
     "rooted-provenance",
     "rooted-storage",
+    "rooted-worker",
 ]
+
+[project.optional-dependencies]
+# Live generation (POST /demo/generate) needs the Genblaze provider SDKs (light, no torch). Kept
+# optional so the default lean deploy installs without them; the deploy that runs live generation
+# builds with `uv sync --extra genblaze` and sets GMI_CLOUD_API_KEY.
+genblaze = ["rooted-worker[genblaze]"]
 
 [tool.uv.sources]
 rooted-provenance = { workspace = true }
 rooted-storage = { workspace = true }
+rooted-worker = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

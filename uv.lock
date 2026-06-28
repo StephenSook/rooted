@@ -2594,7 +2594,13 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rooted-provenance" },
     { name = "rooted-storage" },
+    { name = "rooted-worker" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+genblaze = [
+    { name = "rooted-worker", extra = ["genblaze"] },
 ]
 
 [package.metadata]
@@ -2603,8 +2609,11 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "rooted-provenance", editable = "packages/provenance" },
     { name = "rooted-storage", editable = "packages/storage" },
+    { name = "rooted-worker", editable = "worker" },
+    { name = "rooted-worker", extras = ["genblaze"], marker = "extra == 'genblaze'", editable = "worker" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
+provides-extras = ["genblaze"]
 
 [[package]]
 name = "rooted-mcp"

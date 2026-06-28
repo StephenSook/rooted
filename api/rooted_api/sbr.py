@@ -24,11 +24,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import anyio
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
+from rooted_provenance.audio import AudioDecodeError, audio_to_image
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import (
     ALG_TRUSTMARK_P,
@@ -179,6 +181,36 @@ def set_resolver(resolver: Resolver | None) -> None:
     live API at a Postgres-backed resolver."""
     global _resolver
     _resolver = resolver
+
+
+# A separate resolver for AUDIO so an audio fingerprint can never cross-match an image one: each
+# modality keeps its own index. The audio "image" is a spectrogram (see rooted_provenance.audio), so
+# the same Resolver/PDQ/Hamming machinery recovers audio with no new matcher. Built lazily.
+_audio_resolver: Resolver | None = None
+_audio_resolver_lock = threading.Lock()
+
+
+def get_audio_resolver() -> Resolver:
+    global _audio_resolver
+    if _audio_resolver is None:
+        with _audio_resolver_lock:
+            if _audio_resolver is None:
+                _audio_resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+    return _audio_resolver
+
+
+def set_audio_resolver(resolver: Resolver | None) -> None:
+    """Override the audio resolver, or reset to None to rebuild on next use (tests)."""
+    global _audio_resolver
+    _audio_resolver = resolver
+
+
+# ffmpeg decode is the one expensive, unauthenticated step in the audio path. Bound how many run at
+# once so a burst of audio uploads cannot pin the whole threadpool (and starve every other blocking
+# route) for the decode window; excess requests await a token rather than holding a worker.
+_audio_decode_limiter = anyio.CapacityLimiter(
+    int(os.environ.get("ROOTED_AUDIO_DECODE_CONCURRENCY", "3"))
+)
 
 
 def _make_log() -> TransparencyLog:
@@ -395,6 +427,31 @@ async def matches_by_content(file: UploadFile = File(...)) -> SoftBindingQueryRe
     return await run_in_threadpool(get_resolver().resolve_by_content, image)
 
 
+@router.post(
+    "/matches/byAudioContent",
+    response_model=SoftBindingQueryResult,
+    include_in_schema=False,
+    responses={
+        413: {"description": "uploaded asset too large"},
+        415: {"description": "invalid or unsupported audio"},
+    },
+)
+async def matches_by_audio_content(file: UploadFile = File(...)) -> SoftBindingQueryResult:
+    """Recover an audio asset's manifest by its perceptual audio fingerprint, the audio analog of
+    /matches/byContent. The asset is decoded and reduced to a spectrogram image, then matched in the
+    audio index. It is outside the image-oriented SBR spec contract (so it is unlisted), and
+    the audio fingerprint stays internal like PDQ."""
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="uploaded asset too large")
+    try:
+        # Bound concurrent ffmpeg decodes (the limiter), separately from the rest of the threadpool.
+        image = await anyio.to_thread.run_sync(audio_to_image, data, limiter=_audio_decode_limiter)
+    except AudioDecodeError as exc:
+        raise HTTPException(status_code=415, detail="invalid or unsupported audio") from exc
+    return await run_in_threadpool(get_audio_resolver().resolve_by_content, image)
+
+
 @router.get("/matches/byBinding", response_model=SoftBindingQueryResult)
 async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     return await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
@@ -407,6 +464,9 @@ async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
 )
 async def get_manifest(manifest_id: str) -> Manifest:
     manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
+    if manifest is None:
+        # Fall through to the audio index so a recovered audio manifest is retrievable here too.
+        manifest = await run_in_threadpool(get_audio_resolver().get_manifest, manifest_id)
     if manifest is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     return manifest.redacted()  # SB 942 split: withhold personal provenance on read
@@ -529,6 +589,10 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     log = get_log()
     index = log.index_for(manifest_id)
     manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
+    if manifest is None:
+        # The audio manifest is logged in the shared tree but lives in the audio resolver; fall
+        # through so its inclusion proof is fetchable too (mirrors GET /manifests/{id}).
+        manifest = await run_in_threadpool(get_audio_resolver().get_manifest, manifest_id)
     if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
     # signed_proof computes the proof, the root, and the signed checkpoint under one lock, so the

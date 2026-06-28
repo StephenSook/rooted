@@ -12,6 +12,9 @@ dependencies = [
     "cbor2>=5.6",
     "pymerkle>=6.0",
     "c2pa-python>=0.36",
+    # Bundles a static ffmpeg binary, so the audio fingerprint decodes audio on a lean deploy and in
+    # CI with no system ffmpeg to install. Light relative to the binary it would otherwise need.
+    "imageio-ffmpeg>=0.5",
 ]
 
 [project.optional-dependencies]

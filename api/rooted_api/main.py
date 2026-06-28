@@ -15,9 +15,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from rooted_api.demo import router as demo_router
-from rooted_api.demo import seed_demo
+from rooted_api.demo import seed_audio_demo, seed_demo
 from rooted_api.generate import router as generate_router
-from rooted_api.sbr import get_log, get_resolver, get_storage
+from rooted_api.sbr import get_audio_resolver, get_log, get_resolver, get_storage
 from rooted_api.sbr import router as sbr_router
 from rooted_api.status import router as status_router
 
@@ -27,17 +27,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Build + validate the resolver/DB pool and rehydrate the transparency log now, not on first
     # request, so a misconfigured database fails the deploy loudly.
     get_resolver()
+    get_audio_resolver()
     get_log()
-    # Seed the credential-free demo asset when asked (ROOTED_DEMO_SEED=1), so a live deploy with no
-    # provider key still shows a real VERIFIED recovery. When B2 is configured, the seed also writes
-    # the asset/manifest/signature to B2, so the live demo exercises B2 for real. Idempotent.
+    # Seed the credential-free demo assets when asked (ROOTED_DEMO_SEED=1), so a live deploy with no
+    # provider key still shows a real VERIFIED recovery. The image and audio assets use separate
+    # resolvers (no cross-modal matches) but share the transparency log + B2. Idempotent.
     if os.environ.get("ROOTED_DEMO_SEED") == "1":
         seed_demo(get_resolver(), get_log(), get_storage())
+        seed_audio_demo(get_audio_resolver(), get_log(), get_storage())
     try:
         yield
     finally:
         # Close the connection pools on shutdown (a no-op for the in-memory backends).
         get_resolver().close()
+        get_audio_resolver().close()
         get_log().close()
 
 

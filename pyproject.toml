@@ -63,6 +63,7 @@ module = [
     "genblaze_core",
     "genblaze_gmicloud",
     "genblaze_openai",
+    "imageio_ffmpeg",
     "locust",
 ]
 ignore_missing_imports = true

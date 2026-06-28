@@ -1,3 +1,4 @@
+import { AudioPanel } from "@/components/audio-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { GeneratePanel } from "@/components/generate-panel";
 import { RecoverPanel } from "@/components/recover-panel";
@@ -26,6 +27,8 @@ export default function Home() {
       <GeneratePanel />
 
       <RecoverPanel />
+
+      <AudioPanel />
 
       <ContentCredentials />
 

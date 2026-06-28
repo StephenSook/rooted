@@ -61,11 +61,15 @@ async function stripBlob(input: Blob): Promise<Blob> {
 }
 
 function ProviderTile({ info }: { info: ProviderInfo }) {
-  const [recoveredId, setRecoveredId] = useState<string | null>(null);
-  const [score, setScore] = useState<number | null>(null);
   const [requestError, setRequestError] = useState(false);
 
   const recover = $api.useMutation("post", "/matches/byContent");
+  // Derive the match (and its score + manifest id) straight from the mutation result, so the score
+  // renders in the SAME tick as the VERIFIED state. A separate setState in onSuccess could lag a
+  // render behind recover.isSuccess (VERIFIED shown, score briefly null), which is a flaky-test trap.
+  const match = recover.isSuccess ? recover.data.matches?.[0] : undefined;
+  const recoveredId = match?.manifestId ?? null;
+  const score = match?.similarityScore ?? null;
   const manifest = $api.useQuery(
     "get",
     "/manifests/{manifest_id}",
@@ -75,8 +79,6 @@ function ProviderTile({ info }: { info: ProviderInfo }) {
 
   async function recoverProvider() {
     if (recover.isPending) return;
-    setRecoveredId(null);
-    setScore(null);
     setRequestError(false);
     try {
       const res = await fetch(`/api/demo/provider/${info.slug}`);
@@ -84,8 +86,7 @@ function ProviderTile({ info }: { info: ProviderInfo }) {
         setRequestError(true);
         return;
       }
-      const original = await res.blob();
-      const stripped = await stripBlob(original);
+      const stripped = await stripBlob(await res.blob());
       recover.mutate(
         {
           // The schema types the multipart `file` field as string; we send the real Blob and let the
@@ -97,23 +98,14 @@ function ProviderTile({ info }: { info: ProviderInfo }) {
             return fd;
           },
         },
-        {
-          onSuccess: (data) => {
-            const match = data.matches?.[0];
-            if (match) {
-              setRecoveredId(match.manifestId);
-              setScore(match.similarityScore ?? null);
-            }
-          },
-          onError: () => setRequestError(true),
-        },
+        { onError: () => setRequestError(true) },
       );
     } catch {
       setRequestError(true);
     }
   }
 
-  const matched = recover.isSuccess && (recover.data.matches?.length ?? 0) > 0;
+  const matched = !!match;
   const noMatch = recover.isSuccess && (recover.data.matches?.length ?? 0) === 0;
   const recoveredModel =
     typeof manifest.data?.systemProvenance?.model === "string"

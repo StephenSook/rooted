@@ -30,3 +30,9 @@ services:
         sync: false
       - key: B2_BUCKET_DEV
         sync: false
+      # Stable checkpoint signing key (raw Ed25519 key as hex). sync:false -> set it in the dashboard.
+      # With it set, key_source is "configured" and the public key + every inclusion proof stay valid
+      # across redeploys; without it each restart generates an ephemeral key and invalidates old
+      # proofs. Required for a stable transparency log through the judging window.
+      - key: ED25519_PRIVATE_KEY_HEX
+        sync: false

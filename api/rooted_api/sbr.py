@@ -66,11 +66,17 @@ _log: TransparencyLog | None = None
 def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
     """The Ed25519 key that signs checkpoints, with its provenance.
 
-    A configured key loads from ED25519_PRIVATE_KEY_PATH. When none is set we fail closed if a
-    key is required (ROOTED_REQUIRE_SIGNING_KEY=1 or APP_ENV=production), so a production
-    tamper-evidence anchor is never silently signed by a throwaway key. Otherwise an ephemeral key
-    is generated, and key_source reports "ephemeral" so a dev/CI key is never a trust anchor.
+    A configured key loads from ED25519_PRIVATE_KEY_HEX (the raw 32-byte key as hex, a single-line
+    env-friendly value) or ED25519_PRIVATE_KEY_PATH (a raw-key file). Pinning a stable key across
+    redeploys keeps the public key and every inclusion proof valid through the judging window. When
+    none is set we fail closed if a key is required (ROOTED_REQUIRE_SIGNING_KEY=1 or
+    APP_ENV=production), so a production tamper-evidence anchor is never silently signed by a
+    throwaway key. Otherwise an ephemeral key is generated, and key_source reports "ephemeral" so a
+    dev/CI key is never mistaken for a trust anchor.
     """
+    hex_key = os.environ.get("ED25519_PRIVATE_KEY_HEX")
+    if hex_key:
+        return load_private_key(bytes.fromhex(hex_key.strip())), "configured"
     path = os.environ.get("ED25519_PRIVATE_KEY_PATH")
     if path:
         return load_private_key(Path(path).read_bytes()), "configured"
@@ -79,8 +85,9 @@ def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
     )
     if require:
         raise RuntimeError(
-            "ED25519_PRIVATE_KEY_PATH is required when ROOTED_REQUIRE_SIGNING_KEY=1 "
-            "or APP_ENV=production; refusing to sign checkpoints with an ephemeral key"
+            "ED25519_PRIVATE_KEY_HEX or ED25519_PRIVATE_KEY_PATH is required when "
+            "ROOTED_REQUIRE_SIGNING_KEY=1 or APP_ENV=production; refusing to sign checkpoints "
+            "with an ephemeral key"
         )
     priv, _pub = generate_keypair()
     return priv, "ephemeral"

@@ -16,6 +16,7 @@ import hmac
 import io
 import logging
 import os
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -66,11 +67,17 @@ _log: TransparencyLog | None = None
 def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
     """The Ed25519 key that signs checkpoints, with its provenance.
 
-    A configured key loads from ED25519_PRIVATE_KEY_PATH. When none is set we fail closed if a
-    key is required (ROOTED_REQUIRE_SIGNING_KEY=1 or APP_ENV=production), so a production
-    tamper-evidence anchor is never silently signed by a throwaway key. Otherwise an ephemeral key
-    is generated, and key_source reports "ephemeral" so a dev/CI key is never a trust anchor.
+    A configured key loads from ED25519_PRIVATE_KEY_HEX (the raw 32-byte key as hex, a single-line
+    env-friendly value) or ED25519_PRIVATE_KEY_PATH (a raw-key file). Pinning a stable key across
+    redeploys keeps the public key and every inclusion proof valid through the judging window. When
+    none is set we fail closed if a key is required (ROOTED_REQUIRE_SIGNING_KEY=1 or
+    APP_ENV=production), so a production tamper-evidence anchor is never silently signed by a
+    throwaway key. Otherwise an ephemeral key is generated, and key_source reports "ephemeral" so a
+    dev/CI key is never mistaken for a trust anchor.
     """
+    hex_key = os.environ.get("ED25519_PRIVATE_KEY_HEX")
+    if hex_key:
+        return load_private_key(bytes.fromhex(hex_key.strip())), "configured"
     path = os.environ.get("ED25519_PRIVATE_KEY_PATH")
     if path:
         return load_private_key(Path(path).read_bytes()), "configured"
@@ -79,8 +86,9 @@ def _load_signing_key() -> tuple[Ed25519PrivateKey, str]:
     )
     if require:
         raise RuntimeError(
-            "ED25519_PRIVATE_KEY_PATH is required when ROOTED_REQUIRE_SIGNING_KEY=1 "
-            "or APP_ENV=production; refusing to sign checkpoints with an ephemeral key"
+            "ED25519_PRIVATE_KEY_HEX or ED25519_PRIVATE_KEY_PATH is required when "
+            "ROOTED_REQUIRE_SIGNING_KEY=1 or APP_ENV=production; refusing to sign checkpoints "
+            "with an ephemeral key"
         )
     priv, _pub = generate_keypair()
     return priv, "ephemeral"
@@ -290,6 +298,17 @@ def _check_ingest_auth(provided: str | None) -> None:
         )
 
 
+# manifest_id and watermark_id flow into content-addressable storage keys (manifests/<id>.json,
+# signatures/<id>.cose) and the soft binding; constrain them to a safe charset at the boundary so a
+# value with '/' or '..' can never shape a key (the key builders only sanitize ':').
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9:_.\-]{1,256}$")
+
+
+def _validate_id(value: str, field: str) -> None:
+    if not _SAFE_ID_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"invalid {field}")
+
+
 @router.get("/services/supportedAlgorithms", response_model=SupportedAlgorithms)
 async def supported_algorithms() -> SupportedAlgorithms:
     return SupportedAlgorithms()
@@ -321,6 +340,8 @@ async def ingest(
     re-pointed (409), so a second ingest cannot poison recovery for a victim's watermark.
     """
     _check_ingest_auth(x_ingest_key)
+    _validate_id(manifest_id, "manifest_id")
+    _validate_id(watermark_id, "watermark_id")
     resolver = get_resolver()
     # The index calls are synchronous (psycopg); offload them so a DB round-trip never blocks the
     # event loop and serializes concurrent requests.
@@ -339,7 +360,16 @@ async def ingest(
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
     await run_in_threadpool(resolver.register, manifest, image, watermark_id)
-    await run_in_threadpool(get_log().append, manifest_id, manifest.canonical_hash())
+    try:
+        await run_in_threadpool(get_log().append, manifest_id, manifest.canonical_hash())
+    except Exception as exc:  # noqa: BLE001 - surface ANY append failure clearly, not an opaque 500
+        # The manifest is registered (recoverable) but not in the transparency log, so it has no
+        # inclusion proof yet. Tell the caller exactly that. (A single cross-store transaction is
+        # the documented production follow-up.)
+        logger.error("manifest %s registered but transparency append failed: %s", manifest_id, exc)
+        raise HTTPException(
+            status_code=500, detail="manifest registered but transparency log append failed"
+        ) from exc
     return {"manifestId": manifest_id}
 
 

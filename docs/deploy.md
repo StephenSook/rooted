@@ -25,9 +25,23 @@ repo with those build/start commands. (The Render API/MCP cannot create Docker s
 native runtime is the deploy path; there is no Dockerfile.)
 
 Optional production hardening (not needed for the demo): `DATABASE_URL` for Postgres-backed recovery +
-a persistent transparency log; `ED25519_PRIVATE_KEY_PATH` + `ROOTED_REQUIRE_SIGNING_KEY=1` for a real
-(non-ephemeral) checkpoint key; `ROOTED_REAL_WATERMARK=1` plus the `watermark` extra for real
-TrustMark (pulls torch); the B2 / provider keys for real ingest.
+a persistent transparency log; `ROOTED_REAL_WATERMARK=1` plus the `watermark` extra for real TrustMark
+(pulls torch); the B2 / provider keys for real ingest (`B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET_DEV`);
+`ROOTED_INGEST_KEY` to gate `POST /ingest` (the `X-Ingest-Key` header).
+
+### Stable checkpoint key (recommended for the judging window)
+
+By default the checkpoint signing key is ephemeral, so each redeploy generates a new key and
+invalidates inclusion proofs handed out earlier. To keep the public key and all proofs stable across
+redeploys, set `ED25519_PRIVATE_KEY_HEX` to the raw Ed25519 key as a single hex line (a Render Secret
+Files mount at a path + `ED25519_PRIVATE_KEY_PATH` also works). Generate one with:
+
+```bash
+uv run python -c "from rooted_provenance.signing import generate_keypair, private_key_bytes, public_key_bytes as P; k,p=generate_keypair(); print('HEX', private_key_bytes(k).hex()); print('PUB', P(p).hex())"
+```
+
+Set `ED25519_PRIVATE_KEY_HEX` (secret) in the dashboard, redeploy, and confirm
+`GET /transparency/checkpoint` reports `keySource: "configured"` with the matching `publicKeyHex`.
 
 ## Front end (Vercel)
 

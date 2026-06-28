@@ -163,3 +163,52 @@ def test_decode_rejects_decompression_bomb(monkeypatch: pytest.MonkeyPatch) -> N
     with pytest.raises(HTTPException) as exc:
         sbr._decode_image(_png_bytes(50))
     assert exc.value.status_code == 415
+
+
+async def test_ingest_rejects_unsafe_manifest_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    # manifest_id flows into the storage key (manifests/<id>.json); a value with '/' or '..' must be
+    # rejected at the boundary (400), not silently sanitized only for ':'.
+    monkeypatch.delenv("ROOTED_INGEST_KEY", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    _wire()
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            r = await _ingest(c, "urn:c2pa:../../etc/passwd", "WMX", key=None)
+            assert r.status_code == 400
+    finally:
+        _unwire()
+
+
+async def test_ingest_rejects_unsafe_watermark_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ROOTED_INGEST_KEY", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    _wire()
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            r = await _ingest(c, "urn:c2pa:ok", "bad/../id", key=None)
+            assert r.status_code == 400
+    finally:
+        _unwire()
+
+
+async def test_ingest_surfaces_transparency_append_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # If the log append fails after the manifest is registered, the caller gets a clear 500 (the
+    # manifest is recoverable but lacks a proof) instead of an opaque error.
+    monkeypatch.delenv("ROOTED_INGEST_KEY", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+    log = TransparencyLog()
+
+    def _boom(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("log down")
+
+    monkeypatch.setattr(log, "append", _boom)
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            r = await _ingest(c, "urn:c2pa:zz", "WMZ", key=None)
+            assert r.status_code == 500
+            assert "transparency" in r.json()["detail"].lower()
+    finally:
+        _unwire()

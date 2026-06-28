@@ -1,4 +1,5 @@
 import { ContentCredentials } from "@/components/content-credentials";
+import { GeneratePanel } from "@/components/generate-panel";
 import { RecoverPanel } from "@/components/recover-panel";
 import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
@@ -20,6 +21,8 @@ export default function Home() {
           truth.
         </p>
       </header>
+
+      <GeneratePanel />
 
       <RecoverPanel />
 

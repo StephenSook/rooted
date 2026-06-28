@@ -2,6 +2,7 @@ import { ContentCredentials } from "@/components/content-credentials";
 import { RecoverPanel } from "@/components/recover-panel";
 import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
+import { TamperPanel } from "@/components/tamper-panel";
 import { MerkleExplorer } from "@/components/three/merkle-explorer";
 
 export default function Home() {
@@ -23,6 +24,8 @@ export default function Home() {
       <RecoverPanel />
 
       <ContentCredentials />
+
+      <TamperPanel />
 
       <StoragePanel />
 

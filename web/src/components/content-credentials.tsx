@@ -4,11 +4,12 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 
 // Reads and displays standard C2PA Content Credentials embedded in an image, using
-// @contentauth/c2pa-web (the maintained CAI data SDK; the c2pa-wc display component is deprecated, so
-// the UI is hand-built per the C2PA 2.0 UX recommendations). The SDK is loaded with a dynamic
+// @contentauth/c2pa-web (the maintained CAI data SDK; the c2pa-wc display component is deprecated,
+// so the UI is hand-built per the C2PA 2.0 UX recommendations). The SDK is loaded with a dynamic
 // import() inside the effect so its worker/WASM only run in the browser, never during SSR. The image
-// is signed with a C2PA test certificate, so the signature is cryptographically Valid but the issuer
-// is not a Conformance-Program CA (not the green "Trusted" state); shown honestly.
+// is signed with a C2PA test certificate; validating against the C2PA conformance test trust list
+// reaches the green "Trusted" state, labeled FOR TESTING ONLY (production uses the C2PA production
+// trust list). The honest test-only framing is shown next to the badge.
 
 type Credentials = {
   title?: string;
@@ -34,7 +35,24 @@ export function ContentCredentials() {
         const { createC2pa } = await import("@contentauth/c2pa-web/inline");
         const c2pa = await createC2pa();
         const blob = await (await fetch(SRC)).blob();
-        const reader = await c2pa.reader.fromBlob("image/jpeg", blob);
+        // Validate against the C2PA conformance test trust list (the test root anchors + the allowed
+        // signing EKUs) so the signing certificate's issuer is checked, not just the signature: with
+        // the matching test anchors the manifest validates as the green "Trusted" state, not just
+        // "Valid". If the trust files can't be fetched, fall back to a plain read (reports "Valid").
+        const reader = await (async () => {
+          try {
+            const [anchors, cfg] = await Promise.all([
+              fetch("/c2pa-trust/anchors.pem").then((r) => (r.ok ? r.text() : Promise.reject(r))),
+              fetch("/c2pa-trust/store.cfg").then((r) => (r.ok ? r.text() : Promise.reject(r))),
+            ]);
+            return c2pa.reader.fromBlob("image/jpeg", blob, {
+              verify: { verifyTrust: true },
+              trust: { trustAnchors: anchors, trustConfig: cfg },
+            });
+          } catch {
+            return c2pa.reader.fromBlob("image/jpeg", blob);
+          }
+        })();
         if (!reader) {
           if (!cancelled) {
             setError("No Content Credentials found in this asset.");
@@ -81,8 +99,9 @@ export function ContentCredentials() {
         C2PA Content Credentials
       </h2>
       <p className="mb-3 text-[11px] text-white/40">
-        Read in the browser from a separately C2PA-credentialed sample, to show the reading
-        capability. The recovered asset is stripped, so its provenance comes from the repository.
+        Read in the browser from a separately C2PA-credentialed sample, and validated against the
+        C2PA conformance test trust list to show the green Trusted state. The recovered asset is
+        stripped, so its provenance comes from the repository.
       </p>
 
       {loading && <p className="font-mono text-sm text-white/50">Reading credentials…</p>}
@@ -105,8 +124,12 @@ export function ContentCredentials() {
               >
                 cr
               </span>
-              <span className="font-mono text-xs text-emerald-300">
-                signature {cc.validationState ?? "Valid"}
+              <span
+                className={`font-mono text-xs ${
+                  cc.validationState === "Trusted" ? "text-emerald-300" : "text-amber-300"
+                }`}
+              >
+                {cc.validationState ?? "Valid"}
               </span>
             </div>
             <dl className="grid gap-1 font-mono text-xs text-white/70">
@@ -117,8 +140,9 @@ export function ContentCredentials() {
               <Row k="assertions" v={cc.assertions.join(", ")} />
             </dl>
             <p className="mt-2 text-[11px] text-white/40">
-              Signed with a C2PA test certificate: the signature is valid, not the green Trusted state
-              (which needs a Conformance-Program CA).
+              {cc.validationState === "Trusted"
+                ? "Trusted against the C2PA conformance test trust list. The test certificate is marked FOR TESTING ONLY; a production deployment validates against the C2PA production trust list."
+                : "Signed with a C2PA test certificate: the signature is valid, not the green Trusted state (which needs a Conformance-Program CA)."}
             </p>
           </div>
         </div>

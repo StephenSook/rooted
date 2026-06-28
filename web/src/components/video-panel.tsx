@@ -105,7 +105,12 @@ export function VideoPanel() {
         Rooted recovers it by matching its keyframe fingerprints. No embedded credential needed.
       </p>
 
-      <video controls src="/api/demo/video" className="w-full rounded-lg">
+      <video
+        controls
+        preload="none"
+        src="/api/demo/video"
+        className="aspect-video w-full rounded-lg"
+      >
         Your browser cannot play the demo clip.
       </video>
 

@@ -10,6 +10,16 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${API_PROXY_TARGET}/:path*` }];
   },
+  async headers() {
+    // The credentialed C2PA sample is a static, immutable asset (read by c2pa-web and next/image),
+    // so cache it hard instead of revalidating on every visit.
+    return [
+      {
+        source: "/credentialed-sample.jpg",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -241,7 +241,7 @@ export function GeneratePanel() {
               <img
                 src={gen.image}
                 alt="Generated, credentialed asset"
-                className="mb-3 w-full max-w-xs rounded-lg border border-white/10"
+                className="mb-3 aspect-square w-full max-w-xs rounded-lg border border-white/10 object-cover"
               />
 
               <dl className="grid gap-1 font-mono text-xs text-white/70">

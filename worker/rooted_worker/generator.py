@@ -5,6 +5,12 @@ multi-provider generator (GMICloud primary, OpenAI cross-provider fallback) used
 extra and provider keys are present. Asset bytes are read defensively: a file:// asset is bounded to
 the temp dir the provider writes to, and an https asset is fetched over https only, refusing
 internal addresses and redirects, with a size cap.
+
+The https path resolves the host exactly once, validates every returned address, then pins the
+connection to a validated IP literal (preserving the original Host header and the SNI/certificate
+hostname). Pinning closes the SSRF time-of-check/time-of-use window: a DNS answer that flips between
+the check and the fetch (rebinding, or a multi-record round-robin) cannot redirect the connection to
+an internal address, because the address that was validated is the address that is connected.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import unquote, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 import numpy as np
 from PIL import Image
@@ -55,55 +61,127 @@ class FakeGenerator:
 
 
 _MAX_ASSET_BYTES = 50 * 1024 * 1024  # cap on a fetched/read genblaze asset
+_ASSET_FETCH_TIMEOUT = 120.0
 
 
-def _reject_internal_host(host: str | None) -> None:
-    """SSRF guard: refuse a host that resolves to a private, loopback, or reserved address."""
-    if not host:
-        raise ValueError("genblaze asset URL has no host")
+class AssetFetchError(ValueError):
+    """A genblaze asset could not be safely fetched (bad scheme, the SSRF guard, the size cap).
+
+    Subclasses ``ValueError`` for backward compatibility with callers that treat asset-validation
+    failures as ``ValueError``. It is the precise type the cross-provider fallback catches, so a
+    genuine asset/provider problem falls back to OpenAI while an unrelated programming error (a
+    ``TypeError``, an attribute change, an image decode failure) propagates instead of being masked.
+    """
+
+
+def _validated_addresses(host: str, port: int) -> list[str]:
+    """Resolve ``host`` once and return every resolved address as an IP literal.
+
+    The whole answer is rejected if ANY address is internal (private, loopback, link-local,
+    reserved, multicast, or unspecified), de-mapping IPv4-mapped IPv6 first, so a multi-record or
+    round-robin answer cannot smuggle an internal address past the guard. The returned literals are
+    what the caller pins the connection to, so the address validated here is the address connected.
+    """
     try:
-        infos = socket.getaddrinfo(host, None)
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
-        raise ValueError(f"cannot resolve genblaze asset host {host!r}") from exc
+        raise AssetFetchError(f"cannot resolve genblaze asset host {host!r}") from exc
+    addresses: list[str] = []
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            raise ValueError(f"refusing to fetch a genblaze asset from internal address {ip}")
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(info[4][0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise AssetFetchError(f"refusing to fetch a genblaze asset from internal address {ip}")
+        addresses.append(str(ip))
+    if not addresses:
+        raise AssetFetchError(f"cannot resolve genblaze asset host {host!r}")
+    return addresses
 
 
 def _asset_bytes(url: str) -> bytes:
     """Read a genblaze asset's bytes, failing closed on an untrusted URL.
 
     OpenAI assets are a local file:// the provider already downloaded (bounded to the temp dir it
-    writes to); GMICloud assets are remote URLs fetched over https only, refusing internal
-    addresses (SSRF) and redirects, with a size cap. The asset URL comes from the provider
-    response, so this is defense in depth rather than a user-facing input path.
+    writes to); GMICloud assets are remote URLs fetched over https only, with the SSRF pin and a
+    size cap. The asset URL comes from the provider response, so this is defense in depth rather
+    than a user-facing input path.
     """
     parsed = urlparse(url)
     if parsed.scheme == "file":
         path = Path(unquote(parsed.path)).resolve()
         tmp_root = Path(tempfile.gettempdir()).resolve()
         if not path.is_relative_to(tmp_root):
-            raise ValueError(f"refusing to read a genblaze asset outside the temp dir: {path}")
+            raise AssetFetchError(f"refusing to read a genblaze asset outside the temp dir: {path}")
         data = path.read_bytes()
         if len(data) > _MAX_ASSET_BYTES:
-            raise ValueError("genblaze asset exceeds the size cap")
+            raise AssetFetchError("genblaze asset exceeds the size cap")
         return data
     if parsed.scheme != "https":
-        raise ValueError(f"unsupported genblaze asset URL scheme: {parsed.scheme!r}")
-    _reject_internal_host(parsed.hostname)
+        raise AssetFetchError(f"unsupported genblaze asset URL scheme: {parsed.scheme!r}")
+    return _https_asset_bytes(url, parsed)
+
+
+def _https_asset_bytes(url: str, parsed: ParseResult) -> bytes:
+    """Fetch an https asset, pinning the connection to a once-resolved, validated IP.
+
+    follow_redirects stays off: following a redirect would re-resolve a fresh (unvalidated) host and
+    bypass the guard. The original hostname is preserved as the Host header and as the SNI/cert
+    hostname so virtual-host routing and TLS certificate verification still work against the IP.
+    """
     import httpx
+
+    host = parsed.hostname
+    if not host:
+        raise AssetFetchError("genblaze asset URL has no host")
+    port = parsed.port or 443
+    pinned_ip = _validated_addresses(host, port)[0]
+    connect_url = httpx.URL(url).copy_with(host=pinned_ip)
+    host_header = host if parsed.port is None else f"{host}:{parsed.port}"
+    headers = {"Host": host_header}
+    extensions = {"sni_hostname": host}
 
     chunks: list[bytes] = []
     total = 0
-    with httpx.stream("GET", url, timeout=120.0, follow_redirects=False) as resp:
+    with (
+        httpx.Client(timeout=_ASSET_FETCH_TIMEOUT, follow_redirects=False) as client,
+        client.stream("GET", connect_url, headers=headers, extensions=extensions) as resp,
+    ):
         resp.raise_for_status()
         for chunk in resp.iter_bytes():
             total += len(chunk)
             if total > _MAX_ASSET_BYTES:
-                raise ValueError("genblaze asset exceeds the size cap")
+                raise AssetFetchError("genblaze asset exceeds the size cap")
             chunks.append(chunk)
     return b"".join(chunks)
+
+
+def _fallback_exception_types() -> tuple[type[Exception], ...]:
+    """Exception types that justify a cross-provider fallback (vs. a bug that must propagate).
+
+    Provider, network, timeout, and asset-fetch failures fall back to OpenAI; an unexpected type
+    (TypeError, attribute change, image decode failure) is not listed here and so propagates.
+    genblaze raises GenblazeError subclasses (PipelineError on step failure, ProviderError,
+    PipelineTimeoutError) from ``Pipeline.run(raise_on_failure=True)``; it is imported lazily
+    because the genblaze extra is optional and absent from the default install.
+    """
+    import httpx
+
+    types: list[type[Exception]] = [AssetFetchError, httpx.HTTPError]
+    try:
+        from genblaze_core import GenblazeError
+    except ImportError:
+        pass
+    else:
+        types.append(GenblazeError)
+    return tuple(types)
 
 
 class GenblazeGenerator:
@@ -137,9 +215,13 @@ class GenblazeGenerator:
         self._timeout = timeout
 
     def generate(self, prompt: str) -> GenerationResult:
+        fallback_errors = _fallback_exception_types()
         try:
             return self._generate_gmi(prompt)
-        except Exception as exc:  # noqa: BLE001 - any GMICloud failure falls back across providers
+        except fallback_errors as exc:
+            # A provider/network/timeout/asset failure falls back across providers; an unexpected
+            # error (a bug, an attribute change, a decode failure) propagates rather than being
+            # masked as "GMICloud failed" with a silent provider switch.
             if not self._openai_api_key:
                 raise
             logger.warning("GMICloud generation failed (%s); falling back to OpenAI", exc)

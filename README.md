@@ -7,6 +7,13 @@ re-encode), Rooted recovers the full provenance by matching an invisible waterma
 perceptual-hash fingerprint against manifests stored in B2, and returns the recovered, signed
 manifest with a tamper-evident transparency-log proof.
 
+Backblaze B2 is the recovery repository the whole system depends on, not an add-on. Rooted runs on B2
+Cloud Storage (S3-compatible object storage): every signed asset, manifest, and COSE signature is
+addressed by its content hash on B2, so recovery returns exactly the bytes that were signed, and the
+Merkle transparency checkpoints seal to a B2 Object Lock bucket under compliance retention, immutable
+by construction. The whole point of an SBR server is a durable, vendor-neutral repository to recover
+from, and that repository is B2.
+
 ## Live demo
 
 - Web: https://rooted-web-phi.vercel.app
@@ -15,9 +22,10 @@ manifest with a tamper-evident transparency-log proof.
 Open the site and click "recover the demo asset": a real AI-generated image (created with Genblaze on
 GMI Cloud, model seedream-5.0-lite) is recovered to VERIFIED, the recovered manifest's system
 provenance names that model, a separately C2PA-credentialed sample is read in the browser to show its
-Content Credentials, and the transparency log renders as a 3D Merkle tree. The live demo runs
-credential-free; with B2 credentials set it also stores each asset, manifest, and signature on
-Backblaze B2. Provenance proves origin, not truth.
+Content Credentials, and the transparency log renders as a 3D Merkle tree. The deployed instance
+stores each asset, manifest, and signature content-addressably on Backblaze B2 (bucket rooted-dev),
+verifiable live at `/demo/storage`; the recovery index and transparency log run in-memory on the live
+instance and are wired to Postgres for the production path. Provenance proves origin, not truth.
 
 ## Why it exists
 

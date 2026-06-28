@@ -17,7 +17,6 @@ import io
 import logging
 import os
 import threading
-import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -236,21 +235,24 @@ def _decode_image(data: bytes) -> Image.Image:
     """Decode uploaded bytes to an RGB image, failing closed on untrusted input. An oversized upload
     is rejected (413) before decode; anything that is not a decodable image, including a
     decompression bomb whose header declares a huge size, becomes a 415 rather than a 500.
-    DecompressionBombError is not an OSError, so it must be caught explicitly, and the softer
-    DecompressionBombWarning (the 1x-2x band) is promoted to an error so it is rejected too."""
+
+    The bomb check reads the declared pixel size from the header (Image.open is lazy) and rejects
+    before materializing pixels with .convert(). This is an explicit, thread-safe check: it does not
+    touch the process-global warnings filters, so it is safe under the multi-thread decode pool
+    (mutating warnings filters there could let a concurrent decode slip a bomb through).
+    DecompressionBombError is not an OSError, so it is caught explicitly."""
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="uploaded asset too large")
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            return Image.open(io.BytesIO(data)).convert("RGB")
-    except (
-        UnidentifiedImageError,
-        OSError,
-        Image.DecompressionBombError,
-        Image.DecompressionBombWarning,
-        ValueError,
-    ) as exc:
+        img = Image.open(io.BytesIO(data))
+        width, height = img.size
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, ValueError) as exc:
+        raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
+    if width * height > Image.MAX_IMAGE_PIXELS:
+        raise HTTPException(status_code=415, detail="invalid or unsupported image")
+    try:
+        return img.convert("RGB")
+    except (OSError, Image.DecompressionBombError, ValueError) as exc:
         raise HTTPException(status_code=415, detail="invalid or unsupported image") from exc
 
 
@@ -268,7 +270,13 @@ def _check_ingest_auth(provided: str | None) -> None:
     signing-key fail-closed pattern, so a public deploy never exposes an unauthenticated writer."""
     expected = os.environ.get("ROOTED_INGEST_KEY")
     if expected:
-        if not (provided and hmac.compare_digest(provided, expected)):
+        # Compare as bytes: hmac.compare_digest raises on a non-ASCII str, which would turn a
+        # crafted header into a 500 instead of a clean 401. Encoding sidesteps that (still fails
+        # closed regardless), keeping the comparison constant-time.
+        ok = provided is not None and hmac.compare_digest(
+            provided.encode("utf-8"), expected.encode("utf-8")
+        )
+        if not ok:
             raise HTTPException(status_code=401, detail="invalid or missing ingest credential")
         return
     require = (

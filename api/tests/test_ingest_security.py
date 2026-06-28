@@ -65,6 +65,25 @@ async def test_ingest_requires_key_when_configured(monkeypatch: pytest.MonkeyPat
         _unwire()
 
 
+async def test_ingest_non_ascii_key_is_401_not_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A non-ASCII X-Ingest-Key must be a clean 401, not a 500. Sent as raw Latin-1 header bytes so
+    # it reaches the handler as a non-ASCII str (hmac.compare_digest raises on those; the gate
+    # compares encoded bytes to avoid it).
+    monkeypatch.setenv("ROOTED_INGEST_KEY", "s3cret")
+    _wire()
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            r = await c.post(
+                "/ingest",
+                files={"file": ("a.png", _png_bytes(), "image/png")},
+                data={"manifest_id": "urn:c2pa:u", "watermark_id": "WMU"},
+                headers={"X-Ingest-Key": "café-key".encode("latin-1")},
+            )
+            assert r.status_code == 401
+    finally:
+        _unwire()
+
+
 async def test_ingest_allowed_without_key_in_demo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ROOTED_INGEST_KEY", raising=False)
     monkeypatch.delenv("ROOTED_REQUIRE_INGEST_KEY", raising=False)

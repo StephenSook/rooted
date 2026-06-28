@@ -29,6 +29,9 @@
 # misc
 .DS_Store
 *.pem
+# Public C2PA conformance TEST trust anchors (no private key; FOR TESTING_ONLY). Whitelisted past
+# the blanket *.pem rule so the front end can serve them for the trusted-path demo.
+!public/c2pa-trust/anchors.pem
 
 # debug
 npm-debug.log*

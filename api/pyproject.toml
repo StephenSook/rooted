@@ -9,14 +9,11 @@ dependencies = [
     "python-multipart>=0.0.9",
     "rooted-provenance",
     "rooted-storage",
-    "rooted-worker",
+    # rooted-worker with the genblaze extra: the Genblaze provider SDKs are light (no torch), so they
+    # ship in the base install. This keeps the deploy self-consistent (the standard build command
+    # installs everything live generation needs) with no separate extra or blueprint sync to forget.
+    "rooted-worker[genblaze]",
 ]
-
-[project.optional-dependencies]
-# Live generation (POST /demo/generate) needs the Genblaze provider SDKs (light, no torch). Kept
-# optional so the default lean deploy installs without them; the deploy that runs live generation
-# builds with `uv sync --extra genblaze` and sets GMI_CLOUD_API_KEY.
-genblaze = ["rooted-worker[genblaze]"]
 
 [tool.uv.sources]
 rooted-provenance = { workspace = true }

@@ -48,6 +48,7 @@ from rooted_provenance.signing import (
     public_key_bytes,
     verify_manifest,
 )
+from rooted_provenance.video import VideoDecodeError, video_frames
 from rooted_provenance.watermark import FakeWatermarker, Watermarker
 from rooted_storage.storage import Storage
 
@@ -211,6 +212,41 @@ def set_audio_resolver(resolver: Resolver | None) -> None:
 _audio_decode_limiter = anyio.CapacityLimiter(
     int(os.environ.get("ROOTED_AUDIO_DECODE_CONCURRENCY", "3"))
 )
+
+
+# A separate resolver for VIDEO (same reasoning as audio): a video registers one PDQ per sampled
+# frame in its own index, so video frames never cross-match an image or audio asset. Built lazily.
+_video_resolver: Resolver | None = None
+_video_resolver_lock = threading.Lock()
+_video_decode_limiter = anyio.CapacityLimiter(
+    int(os.environ.get("ROOTED_VIDEO_DECODE_CONCURRENCY", "2"))
+)
+
+
+def get_video_resolver() -> Resolver:
+    global _video_resolver
+    if _video_resolver is None:
+        with _video_resolver_lock:
+            if _video_resolver is None:
+                _video_resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+    return _video_resolver
+
+
+def set_video_resolver(resolver: Resolver | None) -> None:
+    """Override the video resolver, or reset to None to rebuild on next use (tests)."""
+    global _video_resolver
+    _video_resolver = resolver
+
+
+def _lookup_manifest(manifest_id: str) -> Manifest | None:
+    """Find a manifest across all modality resolvers (image, audio, video). They keep separate
+    indexes so fingerprints never cross-match, but a manifest recovered from any of them must still
+    be fetchable by id (for GET /manifests and the inclusion proof)."""
+    for resolver in (get_resolver(), get_audio_resolver(), get_video_resolver()):
+        manifest = resolver.get_manifest(manifest_id)
+        if manifest is not None:
+            return manifest
+    return None
 
 
 def _make_log() -> TransparencyLog:
@@ -452,6 +488,46 @@ async def matches_by_audio_content(file: UploadFile = File(...)) -> SoftBindingQ
     return await run_in_threadpool(get_audio_resolver().resolve_by_content, image)
 
 
+# Larger than images/audio (25 MB) but still bounded: a re-encoded demo clip is a few MB, and the
+# per-frame decode is independently size-bounded (see rooted_provenance.video), so this caps the
+# body buffer without needing a multi-GB allowance.
+_MAX_VIDEO_UPLOAD_BYTES = 32 * 1024 * 1024
+
+
+def _resolve_video_frames(frames: list[Image.Image]) -> SoftBindingQueryResult:
+    """Match each sampled frame against the video index; the first frame that resolves wins. Any one
+    frame match recovers the video, which is what survives a re-encode that perturbs some frames."""
+    resolver = get_video_resolver()
+    for frame in frames:
+        result = resolver.resolve_by_content(frame)
+        if result.matches:
+            return result
+    return SoftBindingQueryResult()
+
+
+@router.post(
+    "/matches/byVideoContent",
+    response_model=SoftBindingQueryResult,
+    include_in_schema=False,
+    responses={
+        413: {"description": "uploaded asset too large"},
+        415: {"description": "invalid or unsupported video"},
+    },
+)
+async def matches_by_video_content(file: UploadFile = File(...)) -> SoftBindingQueryResult:
+    """Recover a video's manifest by per-keyframe PDQ. The video is decoded to sampled frames; the
+    first frame whose fingerprint matches the video index recovers the manifest. Outside the
+    image-oriented SBR spec contract (so it is unlisted); the per-frame fingerprint is internal."""
+    data = await file.read()
+    if len(data) > _MAX_VIDEO_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="uploaded asset too large")
+    try:
+        frames = await anyio.to_thread.run_sync(video_frames, data, limiter=_video_decode_limiter)
+    except VideoDecodeError as exc:
+        raise HTTPException(status_code=415, detail="invalid or unsupported video") from exc
+    return await run_in_threadpool(_resolve_video_frames, frames)
+
+
 @router.get("/matches/byBinding", response_model=SoftBindingQueryResult)
 async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     return await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
@@ -463,10 +539,7 @@ async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     responses={404: {"description": "manifest not found"}},
 )
 async def get_manifest(manifest_id: str) -> Manifest:
-    manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
-    if manifest is None:
-        # Fall through to the audio index so a recovered audio manifest is retrievable here too.
-        manifest = await run_in_threadpool(get_audio_resolver().get_manifest, manifest_id)
+    manifest = await run_in_threadpool(_lookup_manifest, manifest_id)
     if manifest is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     return manifest.redacted()  # SB 942 split: withhold personal provenance on read
@@ -588,11 +661,7 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     leaf to a signed tree head without trusting this endpoint."""
     log = get_log()
     index = log.index_for(manifest_id)
-    manifest = await run_in_threadpool(get_resolver().get_manifest, manifest_id)
-    if manifest is None:
-        # The audio manifest is logged in the shared tree but lives in the audio resolver; fall
-        # through so its inclusion proof is fetchable too (mirrors GET /manifests/{id}).
-        manifest = await run_in_threadpool(get_audio_resolver().get_manifest, manifest_id)
+    manifest = await run_in_threadpool(_lookup_manifest, manifest_id)
     if index is None or manifest is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
     # signed_proof computes the proof, the root, and the signed checkpoint under one lock, so the

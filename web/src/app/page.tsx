@@ -6,6 +6,7 @@ import { StatusPanel } from "@/components/status-panel";
 import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
 import { TamperPanel } from "@/components/tamper-panel";
+import { VideoPanel } from "@/components/video-panel";
 import { MerkleExplorer } from "@/components/three/merkle-explorer";
 
 export default function Home() {
@@ -29,6 +30,8 @@ export default function Home() {
       <RecoverPanel />
 
       <AudioPanel />
+
+      <VideoPanel />
 
       <ContentCredentials />
 

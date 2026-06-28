@@ -2,6 +2,7 @@ import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { GeneratePanel } from "@/components/generate-panel";
+import { LineagePanel } from "@/components/lineage-panel";
 import { RecoverPanel } from "@/components/recover-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { StoragePanel } from "@/components/storage-panel";
@@ -39,6 +40,8 @@ export default function Home() {
       <TamperPanel />
 
       <StoragePanel />
+
+      <LineagePanel />
 
       <MerkleExplorer />
 

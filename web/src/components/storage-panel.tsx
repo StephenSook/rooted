@@ -57,10 +57,10 @@ export function StoragePanel() {
           <ul className="mt-3 space-y-1 font-mono text-xs">
             {Object.keys(info.keys).map((name) => (
               <li key={name} className="flex gap-2">
-                <span className={info.present[name] ? "text-emerald-300" : "text-white/30"}>
+                <span className={info.present[name] ? "text-emerald-300" : "text-white/50"}>
                   {info.present[name] ? "✓" : "·"}
                 </span>
-                <span className="w-20 shrink-0 text-white/40">{LABELS[name] ?? name}</span>
+                <span className="w-20 shrink-0 text-white/55">{LABELS[name] ?? name}</span>
                 <span className="break-all text-white/70">{info.keys[name]}</span>
               </li>
             ))}

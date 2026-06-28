@@ -36,9 +36,9 @@ export function SupportedAlgorithms() {
 function AlgList({ label, entries }: { label: string; entries: { alg: string }[] }) {
   return (
     <div>
-      <p className="mb-1 text-white/40">{label}</p>
+      <p className="mb-1 text-white/55">{label}</p>
       <ul className="space-y-1">
-        {entries.length === 0 && <li className="text-white/30">none</li>}
+        {entries.length === 0 && <li className="text-white/50">none</li>}
         {entries.map((e) => (
           <li key={e.alg} className="text-emerald-300">
             {e.alg}

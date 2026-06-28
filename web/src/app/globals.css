@@ -18,3 +18,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Designed keyboard focus. The UA focus ring is weak on the near-black theme, so give every
+   interactive control a clearly visible ring (WCAG 2.4.7). Scoped to :focus-visible so it shows on
+   keyboard focus, not mouse clicks. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid rgb(125 211 252 / 0.85);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}

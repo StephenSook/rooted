@@ -88,7 +88,7 @@ export function RecoverPanel() {
         <span className="text-sm text-white/70">
           Drop a stripped image, or click to select
         </span>
-        <span className="font-mono text-xs text-white/40">
+        <span className="font-mono text-xs text-white/55">
           {fileName ?? "we match its watermark or fingerprint against the registry"}
         </span>
       </button>
@@ -116,7 +116,7 @@ export function RecoverPanel() {
       <div className="mt-5 min-h-24">
         <AnimatePresence mode="wait">
           {phase === "idle" && (
-            <Slot key="idle" className="text-white/40">
+            <Slot key="idle" className="text-white/55">
               Awaiting an asset.
             </Slot>
           )}
@@ -165,7 +165,7 @@ export function RecoverPanel() {
                   </>
                 )}
               </dl>
-              <p className="mt-2 text-xs text-white/40">Provenance proves origin, not truth.</p>
+              <p className="mt-2 text-xs text-white/55">Provenance proves origin, not truth.</p>
             </Slot>
           )}
         </AnimatePresence>
@@ -197,7 +197,7 @@ export function Slot({
 export function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-3">
-      <dt className="w-24 shrink-0 text-white/40">{k}</dt>
+      <dt className="w-24 shrink-0 text-white/55">{k}</dt>
       <dd className="break-all text-white/80">{v}</dd>
     </div>
   );

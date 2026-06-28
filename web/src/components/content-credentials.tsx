@@ -98,7 +98,7 @@ export function ContentCredentials() {
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">
         C2PA Content Credentials
       </h2>
-      <p className="mb-3 text-[11px] text-white/40">
+      <p className="mb-3 text-[11px] text-white/55">
         Read in the browser from a separately C2PA-credentialed sample, and validated against the
         C2PA conformance test trust list to show the green Trusted state. The recovered asset is
         stripped, so its provenance comes from the repository.
@@ -139,7 +139,7 @@ export function ContentCredentials() {
               <Row k="signed at" v={cc.time} />
               <Row k="assertions" v={cc.assertions.join(", ")} />
             </dl>
-            <p className="mt-2 text-[11px] text-white/40">
+            <p className="mt-2 text-[11px] text-white/55">
               {cc.validationState === "Trusted"
                 ? "Trusted against the C2PA conformance test trust list. The test certificate is marked FOR TESTING ONLY; a production deployment validates against the C2PA production trust list."
                 : "Signed with a C2PA test certificate: the signature is valid, not the green Trusted state (which needs a Conformance-Program CA)."}
@@ -155,7 +155,7 @@ function Row({ k, v }: { k: string; v?: string }) {
   if (!v) return null;
   return (
     <div className="flex gap-3">
-      <dt className="w-24 shrink-0 text-white/40">{k}</dt>
+      <dt className="w-24 shrink-0 text-white/55">{k}</dt>
       <dd className="break-all text-white/80">{v}</dd>
     </div>
   );

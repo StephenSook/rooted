@@ -75,7 +75,7 @@ export function TamperPanel() {
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.03] p-5 backdrop-blur-md">
       <h2 className="mb-1 text-xs uppercase tracking-widest text-white/50">Tamper-evidence</h2>
-      <p className="mb-3 text-[11px] text-white/40">
+      <p className="mb-3 text-[11px] text-white/55">
         Edit a signed field and re-verify. The COSE signature is checked server-side against the
         published checkpoint key, so any change breaks it.
       </p>
@@ -119,7 +119,7 @@ export function TamperPanel() {
             <button
               type="button"
               onClick={reset}
-              className="font-mono text-xs text-white/40 underline-offset-4 hover:underline"
+              className="font-mono text-xs text-white/55 underline-offset-4 hover:underline"
             >
               reset
             </button>
@@ -129,10 +129,10 @@ export function TamperPanel() {
             )}
             {status === "tampered" && (
               <span className="font-mono text-xs text-rose-400">
-                ✗ TAMPERED — the signature does not cover this manifest
+                ✗ TAMPERED: the signature does not cover this manifest
               </span>
             )}
-            {status === null && <span className="font-mono text-xs text-white/40">edited, re-verify</span>}
+            {status === null && <span className="font-mono text-xs text-white/55">edited, re-verify</span>}
           </div>
         </div>
       )}

@@ -102,23 +102,27 @@ export function LineagePanel() {
           )}
 
           {graphNodes.length > 0 && (
-            <div className="h-72 w-full">
+            <div
+              className="h-72 w-full"
+              role="img"
+              aria-label="3D provenance lineage graph; the same nodes and relationships are listed below."
+            >
               <LineageGraph nodes={graphNodes} links={graphLinks} reduced={reduced} />
             </div>
           )}
 
-          <dl className="mt-3 flex flex-wrap gap-4 text-xs text-white/60">
+          <ul className="mt-3 flex flex-wrap gap-4 text-xs text-white/60">
             {(["generation", "edit", "composite"] as NodeKind[]).map((k) => (
-              <div key={k} className="flex items-center gap-2">
+              <li key={k} className="flex items-center gap-2">
                 <span
                   className="inline-block h-3 w-3 rounded-full"
                   style={{ backgroundColor: CHIP_COLOR[k] }}
                   aria-hidden="true"
                 />
                 <span>{KIND_LABEL[k]}</span>
-              </div>
+              </li>
             ))}
-          </dl>
+          </ul>
 
           <ul className="mt-4 grid gap-2 font-mono text-xs text-white/75">
             {data.nodes.map((n) => (
@@ -129,7 +133,7 @@ export function LineagePanel() {
                   aria-hidden="true"
                 />
                 <span className="text-white/85">{n.title ?? n.id}</span>
-                {n.action != null && <span className="text-white/40">{n.action}</span>}
+                {n.action != null && <span className="text-white/55">{n.action}</span>}
               </li>
             ))}
           </ul>

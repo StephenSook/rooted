@@ -62,16 +62,20 @@ export function MerkleExplorer() {
 
       {data && graph.nodes.length > 0 && (
         <>
-          <div className="h-80 w-full">
+          <div
+            className="h-80 w-full"
+            role="img"
+            aria-label="3D Merkle transparency tree; the tree size and root are listed below."
+          >
             <MerkleGraph nodes={graph.nodes} links={graph.links} reduced={reduced} />
           </div>
           <dl className="mt-2 grid gap-1 font-mono text-xs text-white/60">
             <div className="flex gap-3">
-              <dt className="w-20 text-white/40">leaves</dt>
+              <dt className="w-20 text-white/55">leaves</dt>
               <dd className="text-white/80">{data.treeSize}</dd>
             </div>
             <div className="flex gap-3">
-              <dt className="w-20 shrink-0 text-white/40">root</dt>
+              <dt className="w-20 shrink-0 text-white/55">root</dt>
               <dd className="break-all text-amber-300/90">{data.rootHash}</dd>
             </div>
           </dl>

@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
@@ -116,6 +119,21 @@ def _signed_head() -> MerkleCheckpoint:
     state always yields the same signed checkpoint (a GET is idempotent and reproducible)."""
     log = get_log()
     return log.checkpoint(log.size, _signing_key, datetime.now(UTC).isoformat())
+
+
+def current_checkpoint() -> MerkleCheckpoint:
+    """The current signed tree head (public accessor for the checkpoint-lock surface)."""
+    return _signed_head()
+
+
+def signing_public_key() -> Ed25519PublicKey:
+    """The Ed25519 public key that verifies checkpoint signatures."""
+    return _signing_key.public_key()
+
+
+def key_source() -> str:
+    """Whether the signing key is a configured anchor or an ephemeral dev key."""
+    return _key_source
 
 
 def _psycopg_url(url: str) -> str:
@@ -309,6 +327,43 @@ def set_storage(storage: Storage | None) -> None:
     global _storage, _storage_built
     _storage = storage
     _storage_built = True
+
+
+# A SEPARATE Object-Lock-enabled bucket for the signed Merkle checkpoints. Kept distinct from the
+# iteration bucket (B2_BUCKET_DEV) because a fileLock-enabled bucket's compliance-retained writes
+# are immutable: you iterate against the dev bucket and write the audit anchor to the locked one.
+# When B2_BUCKET_LOCKED is unset, the checkpoint demo falls back to the in-memory model, labeled.
+_locked_storage: Storage | None = None
+_locked_storage_built = False
+
+
+def _make_locked_storage() -> Storage | None:
+    key_id = os.environ.get("B2_KEY_ID")
+    app_key = os.environ.get("B2_APP_KEY")
+    bucket = os.environ.get("B2_BUCKET_LOCKED")
+    if not (key_id and app_key and bucket):
+        return None
+    from rooted_storage.storage import B2Storage
+
+    return B2Storage(key_id, app_key, bucket)
+
+
+def get_locked_storage() -> Storage | None:
+    """The Object-Lock checkpoint bucket, or None when B2_BUCKET_LOCKED is not configured."""
+    global _locked_storage, _locked_storage_built
+    if not _locked_storage_built:
+        with _storage_lock:
+            if not _locked_storage_built:
+                _locked_storage = _make_locked_storage()
+                _locked_storage_built = True
+    return _locked_storage
+
+
+def set_locked_storage(storage: Storage | None) -> None:
+    """Override the locked checkpoint store (tests)."""
+    global _locked_storage, _locked_storage_built
+    _locked_storage = storage
+    _locked_storage_built = True
 
 
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # cap on an uploaded asset

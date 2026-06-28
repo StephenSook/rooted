@@ -10,7 +10,7 @@ from httpx import ASGITransport
 from PIL import Image
 
 from rooted_api import sbr
-from rooted_api.demo import DEMO_ENTRY_COUNT, DEMO_MANIFEST_ID, demo_sample_png, seed_demo
+from rooted_api.demo import DEMO_ENTRY_COUNT, DEMO_MANIFEST_ID, demo_sample_bytes, seed_demo
 from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
@@ -24,7 +24,7 @@ def _fresh() -> tuple[Resolver, TransparencyLog]:
 def test_seed_registers_a_recoverable_asset() -> None:
     resolver, log = _fresh()
     seed_demo(resolver, log)
-    img = Image.open(io.BytesIO(demo_sample_png()))
+    img = Image.open(io.BytesIO(demo_sample_bytes()))
     result = resolver.resolve_by_content(img)
     assert [m.manifest_id for m in result.matches] == [DEMO_MANIFEST_ID]
 
@@ -35,9 +35,20 @@ def test_seed_is_idempotent() -> None:
     seed_demo(
         resolver, log
     )  # a second call (e.g. a restart against a persistent backend) is a no-op
-    result = resolver.resolve_by_content(Image.open(io.BytesIO(demo_sample_png())))
+    result = resolver.resolve_by_content(Image.open(io.BytesIO(demo_sample_bytes())))
     assert len(result.matches) == 1
     assert log.size == DEMO_ENTRY_COUNT  # seeded once, not twice
+
+
+def test_primary_asset_has_real_genblaze_provenance() -> None:
+    # The primary demo asset is a real image generated via Genblaze on GMI Cloud (not a fixture),
+    # so its system provenance names the real model and provider, honestly.
+    resolver, log = _fresh()
+    seed_demo(resolver, log)
+    manifest = resolver.get_manifest(DEMO_MANIFEST_ID)
+    assert manifest is not None
+    assert manifest.system_provenance["model"] == "seedream-5.0-lite"
+    assert manifest.system_provenance["provider"] == "gmicloud-image"
 
 
 def test_seed_populates_the_log() -> None:
@@ -80,7 +91,7 @@ async def test_demo_sample_route_then_recover() -> None:
 
             rec = await c.post(
                 "/matches/byContent",
-                files={"file": ("sample.png", sample.content, "image/png")},
+                files={"file": ("sample.jpg", sample.content, "image/jpeg")},
             )
             assert rec.status_code == 200
             assert rec.json()["matches"][0]["manifestId"] == DEMO_MANIFEST_ID

@@ -206,10 +206,12 @@ async def b2_event(
         if isinstance(payload, dict) and payload.get("eventType") == "b2:TestEvent":
             return JSONResponse({"status": "test-ok"})
         events = []
-    if any(isinstance(e, dict) and e.get("eventType") == "b2:TestEvent" for e in events):
-        return JSONResponse({"status": "test-ok"})
+    # Bound the list FIRST so neither the TestEvent scan nor ingestion can do O(n) work on a huge,
+    # validly-signed payload. (The body is also size-capped by the request-body middleware.)
     if len(events) > _MAX_EVENTS_PER_REQUEST:
         raise HTTPException(status_code=413, detail="too many events in one notification")
+    if any(isinstance(e, dict) and e.get("eventType") == "b2:TestEvent" for e in events):
+        return JSONResponse({"status": "test-ok"})
 
     ingested, skipped = await _ingest_events(events)
     return JSONResponse({"status": "ok", "ingested": ingested, "skipped": skipped})

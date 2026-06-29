@@ -10,6 +10,7 @@ import { GeneratePanel } from "@/components/generate-panel";
 import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
 import { RecoverPanel } from "@/components/recover-panel";
+import { RobustnessPanel } from "@/components/robustness-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { StoragePanel } from "@/components/storage-panel";
 import { SupportedAlgorithms } from "@/components/supported-algorithms";
@@ -39,6 +40,8 @@ export default function Home() {
       <RecoverPanel />
 
       <ComparisonPanel />
+
+      <RobustnessPanel />
 
       <ProvidersPanel />
 

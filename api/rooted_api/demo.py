@@ -25,13 +25,16 @@ from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from PIL import Image
 
 from rooted_provenance.audio import audio_to_image
+from rooted_provenance.fingerprint import compute_pdq, hamming
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.models import (
     ALG_TRUSTMARK_P,
+    PDQ_HAMMING_THRESHOLD,
     CamelModel,
     Manifest,
     SoftBinding,
@@ -504,3 +507,89 @@ async def demo_storage() -> dict[str, Any]:
     bucket = os.environ.get("B2_BUCKET_DEV") if backend == "backblaze-b2" else None
     present = {name: storage.exists(k) for name, k in keys.items()}
     return {"backend": backend, "bucket": bucket, "keys": keys, "present": present}
+
+
+class RobustnessRow(CamelModel):
+    """One transform applied to the demo asset and the honest recovery outcome. hamming_distance is
+    the raw PDQ distance from the original (always present, even when recovery fails); recovered is
+    the real recovery verdict (a content match to the demo manifest within the threshold)."""
+
+    transform: str
+    recovered: bool
+    similarity_score: int | None
+    hamming_distance: int
+
+
+class RobustnessGrid(CamelModel):
+    """How the demo asset's perceptual hash holds up under common transforms. PDQ is robust to
+    re-encode and scaling and not to rotation or large crops; the grid shows that honestly rather
+    than implying recovery survives everything."""
+
+    manifest_id: str
+    threshold: int
+    rows: list[RobustnessRow]
+
+
+def _jpeg(img: Image.Image, quality: int) -> Image.Image:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=quality)
+    buf.seek(0)
+    return Image.open(buf).convert("RGB")
+
+
+def _scale(img: Image.Image, factor: float) -> Image.Image:
+    return img.resize((max(1, int(img.width * factor)), max(1, int(img.height * factor))))
+
+
+def _crop(img: Image.Image, fraction: float) -> Image.Image:
+    w, h = img.size
+    dx, dy = int(w * fraction), int(h * fraction)
+    return img.crop((dx, dy, w - dx, h - dy))
+
+
+def _compute_robustness(resolver: Resolver) -> RobustnessGrid:
+    """Apply each transform to the demo asset, then run the real read-only recovery path and record
+    the honest outcome plus the raw PDQ Hamming distance (computed independently so a failed
+    transform still reports how far it drifted)."""
+    base = Image.open(io.BytesIO(demo_sample_bytes())).convert("RGB")
+    base_bits, _ = compute_pdq(base)
+    transforms: list[tuple[str, Image.Image]] = [
+        ("original", base),
+        ("JPEG quality 90", _jpeg(base, 90)),
+        ("JPEG quality 50", _jpeg(base, 50)),
+        ("JPEG quality 20", _jpeg(base, 20)),
+        ("downscale 50%", _scale(base, 0.5)),
+        ("upscale 150%", _scale(base, 1.5)),
+        ("center crop 10%", _crop(base, 0.10)),
+        ("center crop 25%", _crop(base, 0.25)),
+        ("rotate 5 deg", base.rotate(5, expand=True)),
+        ("rotate 90 deg", base.rotate(90, expand=True)),
+        ("screenshot (downscale + JPEG)", _jpeg(_scale(base, 0.6), 70)),
+    ]
+    rows: list[RobustnessRow] = []
+    for label, img in transforms:
+        q_bits, _ = compute_pdq(img)
+        dist = hamming(base_bits, q_bits)
+        result = resolver.resolve_by_content(img)
+        match = result.matches[0] if result.matches else None
+        recovered = match is not None and match.manifest_id == DEMO_MANIFEST_ID
+        rows.append(
+            RobustnessRow(
+                transform=label,
+                recovered=recovered,
+                similarity_score=match.similarity_score if match else None,
+                hamming_distance=dist,
+            )
+        )
+    return RobustnessGrid(manifest_id=DEMO_MANIFEST_ID, threshold=PDQ_HAMMING_THRESHOLD, rows=rows)
+
+
+@router.get("/demo/robustness", response_model=RobustnessGrid, include_in_schema=False)
+async def demo_robustness() -> RobustnessGrid:
+    """An honest adversarial-robustness grid: apply common transforms to the demo asset and run the
+    real recovery path on each. PDQ survives re-encode and scaling, not rotation or large crops, so
+    the grid shows exactly where recovery holds and where it does not. Read-only (no register, no
+    log append); computed off the event loop."""
+    from rooted_api import sbr
+
+    return await run_in_threadpool(_compute_robustness, sbr.get_resolver())

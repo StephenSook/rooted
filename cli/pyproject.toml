@@ -1,0 +1,19 @@
+[project]
+name = "rooted-sbr"
+version = "0.1.0"
+description = "Rooted SBR CLI: recover C2PA provenance for stripped media from the command line"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "httpx>=0.27",
+    "typer>=0.12",
+]
+
+[project.scripts]
+rooted = "rooted_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rooted_cli"]

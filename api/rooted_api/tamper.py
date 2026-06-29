@@ -16,7 +16,7 @@ import logging
 from fastapi import APIRouter
 from starlette.concurrency import run_in_threadpool
 
-from rooted_provenance.models import CamelModel, Manifest
+from rooted_provenance.models import CamelModel, Manifest, canonical_json
 from rooted_provenance.signing import verify_manifest
 
 router = APIRouter()
@@ -42,15 +42,18 @@ class TamperDiffResponse(CamelModel):
     fields: list[FieldDiff]
 
 
-def _signed_fields(m: Manifest) -> dict[str, str]:
-    """The fields the signature covers (the canonical payload), flattened for a field-level diff."""
-    fields: dict[str, str] = {
-        "manifest_id": m.manifest_id,
-        "asset_sha256": m.asset_sha256,
-        "created_at": m.created_at,
+def _signed_fields(m: Manifest) -> dict[str, tuple[str, str]]:
+    """The fields the signature covers (the canonical payload), flattened as {field: (display,
+    compare)}. The compare value is canonical JSON for system_provenance values, so a typed change
+    (1 vs "1") or a key-order shuffle is caught the way the signature covers it, not lost to str().
+    The top-level fields are already strings."""
+    fields: dict[str, tuple[str, str]] = {
+        "manifest_id": (m.manifest_id, m.manifest_id),
+        "asset_sha256": (m.asset_sha256, m.asset_sha256),
+        "created_at": (m.created_at, m.created_at),
     }
     for key, value in (m.system_provenance or {}).items():
-        fields[f"system_provenance.{key}"] = str(value)
+        fields[f"system_provenance.{key}"] = (str(value), canonical_json(value).decode("utf-8"))
     return fields
 
 
@@ -71,7 +74,11 @@ async def tamper_diff(req: TamperDiffRequest) -> TamperDiffResponse:
     except (binascii.Error, ValueError):
         signature_valid = False
 
-    authentic = await run_in_threadpool(sbr.get_resolver().get_manifest, submitted.manifest_id)
+    try:
+        authentic = await run_in_threadpool(sbr.get_resolver().get_manifest, submitted.manifest_id)
+    except Exception as exc:  # noqa: BLE001 - a registry hiccup must not 500 the demo surface
+        logger.warning("tamper-diff registry lookup failed: %s", exc)
+        authentic = None
     source = "registry"
     if authentic is None:
         authentic = primary_manifest()
@@ -79,15 +86,18 @@ async def tamper_diff(req: TamperDiffRequest) -> TamperDiffResponse:
 
     a = _signed_fields(authentic)
     s = _signed_fields(submitted)
-    fields = [
-        FieldDiff(
-            field=key,
-            authentic=a.get(key, "(absent)"),
-            submitted=s.get(key, "(absent)"),
-            changed=a.get(key) != s.get(key),
+    fields = []
+    for key in sorted(set(a) | set(s)):
+        a_val = a.get(key)
+        s_val = s.get(key)
+        fields.append(
+            FieldDiff(
+                field=key,
+                authentic=a_val[0] if a_val else "(absent)",
+                submitted=s_val[0] if s_val else "(absent)",
+                changed=a_val is None or s_val is None or a_val[1] != s_val[1],
+            )
         )
-        for key in sorted(set(a) | set(s))
-    ]
     tampered = (not signature_valid) or any(f.changed for f in fields)
     return TamperDiffResponse(
         signature_valid=signature_valid,

@@ -46,7 +46,9 @@ export function TamperPanel() {
       const d = await r.json();
       setDiff(d.fields ?? []);
       setSource(d.authenticSource ?? "registry");
-      setStatus(d.signatureValid ? "valid" : "tampered");
+      // Honor the server's full verdict: tampered = signature invalid OR any signed field differs
+      // from the authentic registry manifest (not just the signature check).
+      setStatus(d.tampered ? "tampered" : "valid");
     } catch {
       setError(true);
     }

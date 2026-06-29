@@ -54,11 +54,31 @@ def test_wrong_key_fails() -> None:
     assert verify_manifest(sig, m, other_pub) is False
 
 
-def test_redaction_does_not_break_signature() -> None:
+def test_personal_only_redaction_still_verifies() -> None:
+    # The common case: the prompt is in personal_provenance, which the canonical payload excludes,
+    # so clearing it leaves the signature valid. The redacted disclosure is still self-verifiable.
     priv, pub = generate_keypair()
     m = _manifest()
     sig = sign_manifest(m, priv)
     assert verify_manifest(sig, m.redacted(), pub) is True
+
+
+def test_redacting_a_system_prompt_does_not_verify() -> None:
+    # A legacy/WORM-locked manifest carries the prompt in SYSTEM provenance (which IS hashed). The
+    # disclosure strips it, so the redacted view deliberately no longer verifies against the signed
+    # manifest. This is by design: the verifiable artifact is the FULL signed manifest, not the
+    # privacy disclosure. The signature still verifies against the unchanged full manifest.
+    priv, pub = generate_keypair()
+    m = Manifest(
+        manifest_id="urn:c2pa:33333333-3333-3333-3333-333333333333",
+        asset_sha256="c" * 64,
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream", "prompt": "secret"},
+    )
+    sig = sign_manifest(m, priv)
+    # The unchanged full manifest still verifies; the redacted disclosure deliberately does not.
+    assert verify_manifest(sig, m, pub) is True
+    assert verify_manifest(sig, m.redacted(), pub) is False
 
 
 def test_key_serialization_roundtrip() -> None:

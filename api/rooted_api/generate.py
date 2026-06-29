@@ -310,7 +310,12 @@ def _seed_response(reason: str) -> GenerateResponse:
     the demo is not actually in the log, an honest signal rather than a fabricated leaf 0."""
     born = demo_sample_bytes()
     manifest = primary_manifest()
-    cose = sign_manifest(manifest, sbr._signing_key)
+    disclosed = manifest.redacted()
+    # Sign the DISCLOSED manifest so this response's signature verifies against the manifest it
+    # carries (the primary asset keeps a prompt in system_provenance, which redacted() withholds).
+    # The authoritative, transparency-anchored signature over the FULL manifest is served at
+    # /demo/signed-manifest; this fallback response stays internally consistent on its own.
+    cose = sign_manifest(disclosed, sbr._signing_key)
     storage = sbr.get_storage()
     idx = sbr.get_log().index_for(DEMO_MANIFEST_ID)
     sysprov = manifest.system_provenance
@@ -322,7 +327,7 @@ def _seed_response(reason: str) -> GenerateResponse:
         model=str(sysprov.get("model", "seedream-5.0-lite")),
         provider=str(sysprov.get("provider", "gmicloud-image")),
         signature_b64=base64.b64encode(cose).decode(),
-        manifest=manifest.redacted().model_dump(by_alias=True),
+        manifest=disclosed.model_dump(by_alias=True),
         stored_on_b2=storage is not None and _is_b2(storage),
         fell_back_to_seed=True,
         reason=reason,

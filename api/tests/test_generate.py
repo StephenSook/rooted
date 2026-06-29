@@ -144,6 +144,25 @@ def test_disabled_serves_the_seed(client: TestClient, monkeypatch: pytest.Monkey
     assert "not enabled" in (body["reason"] or "")
 
 
+def test_seed_response_withholds_prompt_and_self_verifies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fallback seed response returns the primary asset, whose prompt sits in system_provenance.
+    # The disclosure must withhold it, AND the returned signature must verify against the returned
+    # (redacted) manifest, so the response is internally consistent (no signature/payload mismatch).
+    monkeypatch.setenv("ROOTED_LIVE_GENERATE", "0")
+    body = _gen(client).json()
+    assert body["fellBackToSeed"] is True
+    assert "prompt" not in body["manifest"]["systemProvenance"]
+    assert "prompt" not in body["manifest"].get("personalProvenance", {})
+    v = client.post(
+        "/verify",
+        json={"manifest": body["manifest"], "signatureB64": body["signatureB64"]},
+    )
+    assert v.status_code == 200
+    assert v.json()["signatureValid"] is True
+
+
 def test_provider_error_serves_the_seed(client: TestClient) -> None:
     class _Boom:
         def generate(self, prompt: str) -> object:

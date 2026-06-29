@@ -90,3 +90,13 @@ def test_key_helpers_are_content_addressable() -> None:
     assert manifest_key("urn:c2pa:abc-123") == "manifests/urn_c2pa_abc-123.json"
     assert signature_key("urn:c2pa:abc-123") == "signatures/urn_c2pa_abc-123.cose"
     assert checkpoint_key(1) == "merkle/checkpoints/epoch_00000001.json"
+
+
+def test_list_keys_filters_by_prefix() -> None:
+    s = InMemoryStorage()
+    s.put("manifests/a.json", b"a")
+    s.put("manifests/b.json", b"b")
+    s.put("assets/xx/yy/zz", b"z")
+    assert s.list_keys("manifests/") == ["manifests/a.json", "manifests/b.json"]
+    assert s.list_keys("assets/") == ["assets/xx/yy/zz"]
+    assert s.list_keys("nope/") == []

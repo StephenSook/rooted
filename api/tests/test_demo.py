@@ -21,6 +21,7 @@ from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.watermark import FakeWatermarker
+from rooted_storage.storage import InMemoryStorage
 
 
 def _fresh() -> tuple[Resolver, TransparencyLog]:
@@ -166,3 +167,41 @@ async def test_demo_robustness_grid_is_honest() -> None:
     assert rows["rotate 90 deg"]["hammingDistance"] > 31
     # every row reports a raw Hamming distance, even the failures (the honesty of the grid)
     assert all(isinstance(r["hammingDistance"], int) for r in body["rows"])
+
+
+async def test_demo_rebuild_reconstructs_the_index_from_storage() -> None:
+    # B2 is the source of truth: with the live index thrown away, the recovery index and the demo
+    # recovery must reconstruct from the stored manifests/assets alone.
+    resolver, log = _fresh()
+    storage = InMemoryStorage()
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    sbr.set_storage(storage)
+    seed_demo(resolver, log, storage)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            body = (await c.get("/demo/rebuild")).json()
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
+        sbr.set_storage(None)
+
+    assert body["available"] is True
+    assert body["backend"] == "in-memory"
+    assert body["manifestsRebuilt"] >= 1
+    assert body["leavesRebuilt"] == body["manifestsRebuilt"]
+    # the recovery index reconstitutes from storage alone: the demo asset recovers against it
+    assert body["demoRecovered"] is True
+    assert body["demoSimilarity"] == 100
+
+
+async def test_demo_rebuild_without_storage_is_honest() -> None:
+    sbr.set_storage(None)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            body = (await c.get("/demo/rebuild")).json()
+    finally:
+        sbr.set_storage(None)
+    assert body["available"] is False
+    assert body["backend"] == "none"
+    assert body["demoRecovered"] is False

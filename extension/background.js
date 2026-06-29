@@ -9,6 +9,7 @@
 const API = "https://rooted-api-ubvc.onrender.com";
 const SITE = "https://rooted-web-phi.vercel.app";
 const MENU_ID = "rooted-recover";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // cap the user-triggered fetch + upload
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -30,9 +31,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 async function recover(srcUrl) {
+  if (!/^https?:|^data:image\//i.test(srcUrl)) throw new Error("unsupported image URL");
   const imgResp = await fetch(srcUrl);
   if (!imgResp.ok) throw new Error(`could not fetch the image (${imgResp.status})`);
+  const declared = Number(imgResp.headers.get("content-length") || 0);
+  if (declared && declared > MAX_IMAGE_BYTES) throw new Error("image is too large");
   const blob = await imgResp.blob();
+  if (blob.size > MAX_IMAGE_BYTES) throw new Error("image is too large");
 
   const fd = new FormData();
   fd.append("file", blob, "image");
@@ -60,7 +65,11 @@ async function recover(srcUrl) {
 function inject(tabId, data) {
   return chrome.scripting
     .executeScript({ target: { tabId }, func: renderCard, args: [data, API, SITE] })
-    .catch(() => {});
+    .catch((e) => {
+      // Restricted pages (chrome://, the Web Store) disallow injection; surface a diagnostic
+      // rather than failing silently.
+      console.warn("Rooted: could not render the result card:", chrome.runtime.lastError || e);
+    });
 }
 
 // Runs in the page (no extension APIs available here). Builds a fixed provenance card using only

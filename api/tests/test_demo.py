@@ -135,3 +135,34 @@ async def test_demo_sample_route_then_recover() -> None:
     finally:
         sbr.set_resolver(None)
         sbr.set_log(None)
+
+
+async def test_demo_robustness_grid_is_honest() -> None:
+    # The grid applies real transforms to the demo asset and runs the real recovery path on each.
+    # PDQ survives re-encode and scaling but not rotation, so the grid must show honest pass/fail.
+    resolver, log = _fresh()
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    seed_demo(resolver, log)
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            body = (await c.get("/demo/robustness")).json()
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
+
+    assert body["manifestId"] == DEMO_MANIFEST_ID
+    assert body["threshold"] == 31
+    rows = {r["transform"]: r for r in body["rows"]}
+    # the original self-recovers at distance 0
+    assert rows["original"]["recovered"] is True
+    assert rows["original"]["hammingDistance"] == 0
+    # PDQ is robust to re-encode and scaling
+    assert rows["JPEG quality 50"]["recovered"] is True
+    assert rows["downscale 50%"]["recovered"] is True
+    assert rows["screenshot (downscale + JPEG)"]["recovered"] is True
+    # PDQ is NOT rotation-invariant: an honest fail at a large distance
+    assert rows["rotate 90 deg"]["recovered"] is False
+    assert rows["rotate 90 deg"]["hammingDistance"] > 31
+    # every row reports a raw Hamming distance, even the failures (the honesty of the grid)
+    assert all(isinstance(r["hammingDistance"], int) for r in body["rows"])

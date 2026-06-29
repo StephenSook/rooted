@@ -28,6 +28,7 @@ from httpx import ASGITransport
 from starlette.types import Lifespan
 
 from rooted_api.agent import router as agent_router
+from rooted_api.b2_events import router as b2_events_router
 from rooted_api.checkpoint import router as checkpoint_router
 from rooted_api.checkpoint import seal_startup_checkpoint
 from rooted_api.demo import router as demo_router
@@ -120,6 +121,7 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
     app.include_router(genblaze_router)
     app.include_router(tamper_router)
     app.include_router(transcript_router)
+    app.include_router(b2_events_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

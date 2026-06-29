@@ -16,6 +16,7 @@ type Status = {
     publicKeyHex: string;
   };
   storage: { backend: string; bucket: string | null; demoAssetPresent: boolean };
+  recoveryIndex: string;
   algorithms: { watermarks: string[]; fingerprints: string[] };
   generation: {
     enabled: boolean;
@@ -49,6 +50,14 @@ export function StatusPanel() {
       ? `Backblaze B2${s.storage.bucket ? ` (${s.storage.bucket})` : ""}`
       : s.storage.backend;
 
+  const indexLabel = !s
+    ? ""
+    : s.recoveryIndex === "postgres+hnsw"
+      ? "Postgres + HNSW (bit_hamming_ops)"
+      : s.recoveryIndex === "postgres+bitcount"
+        ? "Postgres (bit_count)"
+        : "in-memory";
+
   return (
     <section className="rounded-xl border border-white/15 bg-white/[0.03] p-5 backdrop-blur-md">
       <h2 className="mb-3 text-xs uppercase tracking-widest text-white/50">Live status</h2>
@@ -79,6 +88,7 @@ export function StatusPanel() {
           />
           <Item label="checkpoint key" value={s.transparency.keySource} />
           <Item label="storage" value={storageLabel} />
+          <Item label="recovery index" value={indexLabel} />
           <Item label="algorithms" value={s.algorithms.watermarks.join(", ") || "none"} />
           <Item
             label="live generation"

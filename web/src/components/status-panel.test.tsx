@@ -23,6 +23,7 @@ const SAMPLE = {
     publicKeyHex: "b1d184a5",
   },
   storage: { backend: "backblaze-b2", bucket: "rooted-dev", demoAssetPresent: true },
+  recoveryIndex: "postgres+hnsw",
   algorithms: { watermarks: ["com.adobe.trustmark.P"], fingerprints: [] },
   generation: {
     enabled: false,
@@ -52,6 +53,7 @@ describe("StatusPanel", () => {
     expect(screen.getByText(/7 leaves · epoch 7/)).toBeTruthy();
     expect(screen.getByText(/Backblaze B2 \(rooted-dev\)/)).toBeTruthy();
     expect(screen.getByText("com.adobe.trustmark.P")).toBeTruthy();
+    expect(screen.getByText(/Postgres \+ HNSW/)).toBeTruthy();
     // Live generation off in the sample -> honest "seed only".
     expect(screen.getByText("seed only")).toBeTruthy();
   });

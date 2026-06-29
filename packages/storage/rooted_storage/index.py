@@ -179,3 +179,6 @@ class PostgresIndex:
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT pdq FROM perceptual_hashes WHERE manifest_id = %s", (manifest_id,))
             return [str(r[0]) for r in cur.fetchall()]
+
+    def kind(self) -> str:
+        return "postgres+hnsw" if self._hnsw else "postgres+bitcount"

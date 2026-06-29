@@ -60,8 +60,9 @@ def test_status_reports_real_measured_state(client: TestClient) -> None:
     # The advertised algorithms are honest: the registered watermark, no fingerprint (PDQ internal).
     assert "com.adobe.trustmark.P" in body["algorithms"]["watermarks"]
     assert body["algorithms"]["fingerprints"] == []
-    # Storage is off in this fixture.
+    # Storage is off in this fixture; the recovery index is the in-memory scaffold.
     assert body["storage"]["backend"] == "none"
+    assert body["recoveryIndex"] == "in-memory"
 
 
 def test_status_generation_config_reflects_disabled(client: TestClient) -> None:

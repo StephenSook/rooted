@@ -368,6 +368,13 @@ def set_locked_storage(storage: Storage | None) -> None:
 
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # cap on an uploaded asset
 
+# Bound concurrent image decodes like audio/video are bounded: _decode_image can materialize up to
+# ~192 MB of RGB (Image.MAX_IMAGE_PIXELS), so an unbounded burst on the public byContent/ingest
+# routes could OOM the lean instance. Excess requests await a token rather than pinning a worker.
+_image_decode_limiter = anyio.CapacityLimiter(
+    int(os.environ.get("ROOTED_IMAGE_DECODE_CONCURRENCY", "4"))
+)
+
 
 def _decode_image(data: bytes) -> Image.Image:
     """Decode uploaded bytes to an RGB image, failing closed on untrusted input. An oversized upload
@@ -397,9 +404,10 @@ def _decode_image(data: bytes) -> Image.Image:
 
 async def _read_image(file: UploadFile) -> Image.Image:
     # Offload the CPU/memory-bound decode off the event loop so a large (or bomb) image cannot stall
-    # request handling for every other client.
+    # request handling for every other client, and bound concurrency (like the audio/video decoders)
+    # so a burst of large decodes cannot pin the threadpool or OOM the instance.
     data = await file.read()
-    return await run_in_threadpool(_decode_image, data)
+    return await anyio.to_thread.run_sync(_decode_image, data, limiter=_image_decode_limiter)
 
 
 def _check_ingest_auth(provided: str | None) -> None:
@@ -481,7 +489,7 @@ async def ingest(
     if existing.matches:
         raise HTTPException(status_code=409, detail="watermark id already bound to a manifest")
     data = await file.read()
-    image = await run_in_threadpool(_decode_image, data)
+    image = await anyio.to_thread.run_sync(_decode_image, data, limiter=_image_decode_limiter)
     manifest = Manifest(
         manifest_id=manifest_id,
         asset_sha256=hashlib.sha256(data).hexdigest(),

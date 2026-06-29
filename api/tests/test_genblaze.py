@@ -8,7 +8,10 @@ verification and our COSE signature must hold.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
+import pytest
 from httpx import ASGITransport
 
 from rooted_api.main import app
@@ -33,3 +36,18 @@ async def test_genblaze_manifest_reconciles() -> None:
     assert b["reconciled"] is True
     # SB-942: the prompt is withheld from the surfaced provenance.
     assert "prompt" not in b["rooted"]["systemProvenance"]
+
+
+async def test_genblaze_manifest_degrades_when_fixture_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A missing fixture must degrade to an honest not-reconciled response, never a 500.
+    from rooted_api import genblaze
+
+    monkeypatch.setattr(genblaze, "_ASSET", Path("/nonexistent/genblaze-b2-asset.jpg"))
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/demo/genblaze-manifest")
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["reconciled"] is False
+    assert b["genblaze"]["available"] is False

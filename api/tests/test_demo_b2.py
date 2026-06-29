@@ -10,10 +10,18 @@ import httpx
 from httpx import ASGITransport
 
 from rooted_api import sbr
-from rooted_api.demo import DEMO_MANIFEST_ID, demo_sample_bytes, seed_demo
+from rooted_api.demo import (
+    _PROVIDERS,
+    DEMO_MANIFEST_ID,
+    demo_sample_bytes,
+    seed_demo,
+    seed_providers,
+)
 from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
+from rooted_provenance.models import Manifest
 from rooted_provenance.resolver import InMemoryIndex, Resolver
+from rooted_provenance.signing import verify_manifest
 from rooted_provenance.watermark import FakeWatermarker
 from rooted_storage.storage import (
     InMemoryStorage,
@@ -61,3 +69,24 @@ async def test_demo_storage_route_reports_present_objects() -> None:
         sbr.set_resolver(None)
         sbr.set_log(None)
         sbr.set_storage(None)
+
+
+def test_b2_image_signature_verifies_against_published_key() -> None:
+    # The durable COSE signature stored in B2 must verify against the SAME public key the API
+    # publishes (/transparency/checkpoint, /status), not a discarded throwaway key, or the stored
+    # artifact is unverifiable by anyone (the recovery-repository claim would be hollow).
+    resolver, log, storage = _fresh()
+    seed_demo(resolver, log, storage)
+    cose = storage.get(signature_key(DEMO_MANIFEST_ID))
+    manifest = Manifest.model_validate_json(storage.get(manifest_key(DEMO_MANIFEST_ID)))
+    assert verify_manifest(cose, manifest, sbr.signing_public_key()) is True
+
+
+def test_b2_provider_signature_verifies_against_published_key() -> None:
+    # Same guarantee for the multi-provider seeds (the other _register path).
+    resolver, log, storage = _fresh()
+    seed_providers(resolver, log, storage)
+    mid = _PROVIDERS[0]["manifest_id"]
+    cose = storage.get(signature_key(mid))
+    manifest = Manifest.model_validate_json(storage.get(manifest_key(mid)))
+    assert verify_manifest(cose, manifest, sbr.signing_public_key()) is True

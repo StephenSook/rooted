@@ -45,6 +45,7 @@ from rooted_api.sbr import (
 )
 from rooted_api.sbr import router as sbr_router
 from rooted_api.status import router as status_router
+from rooted_api.tamper import router as tamper_router
 from rooted_mcp import server as mcp_server
 
 
@@ -116,6 +117,7 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
     app.include_router(lineage_router)
     app.include_router(checkpoint_router)
     app.include_router(genblaze_router)
+    app.include_router(tamper_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

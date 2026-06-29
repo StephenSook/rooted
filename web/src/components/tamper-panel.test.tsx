@@ -13,8 +13,9 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// Mock the two endpoints: /demo/signed-manifest serves the signed manifest; /verify returns valid
-// only when the manifest's signed fields are unchanged (a faithful stand-in for the COSE check).
+// Mock the two endpoints: /demo/signed-manifest serves the signed manifest; /demo/tamper-diff checks
+// the signature AND returns the field-level diff vs the authentic registry manifest (a faithful
+// stand-in: valid only when the signed fields are unchanged; otherwise it flags the changed field).
 function mockApi(): void {
   globalThis.fetch = vi.fn(async (url: unknown, init?: { body?: unknown }) => {
     const u = String(url);
@@ -30,11 +31,31 @@ function mockApi(): void {
         publicKeyHex: "a".repeat(64),
       });
     }
-    if (u.includes("/verify")) {
+    if (u.includes("/demo/tamper-diff")) {
       const body = JSON.parse(String(init?.body ?? "{}"));
       const m = body.manifest ?? {};
-      const valid = m.systemProvenance?.model === ORIG_MODEL && m.assetSha256 === ORIG_SHA;
-      return json({ signatureValid: valid, publicKeyHex: "a".repeat(64), keySource: "configured" });
+      const modelChanged = m.systemProvenance?.model !== ORIG_MODEL;
+      const shaChanged = m.assetSha256 !== ORIG_SHA;
+      const valid = !modelChanged && !shaChanged;
+      return json({
+        signatureValid: valid,
+        tampered: !valid,
+        authenticSource: "registry",
+        fields: [
+          {
+            field: "system_provenance.model",
+            authentic: ORIG_MODEL,
+            submitted: m.systemProvenance?.model ?? "",
+            changed: modelChanged,
+          },
+          {
+            field: "asset_sha256",
+            authentic: ORIG_SHA,
+            submitted: m.assetSha256 ?? "",
+            changed: shaChanged,
+          },
+        ],
+      });
     }
     return json({}, 404);
   }) as unknown as typeof fetch;
@@ -45,18 +66,20 @@ afterEach(() => {
 });
 
 describe("TamperPanel", () => {
-  it("verifies the untouched manifest, then shows TAMPERED after a signed field is edited", async () => {
+  it("verifies the untouched manifest, then shows TAMPERED + the changed field after an edit", async () => {
     mockApi();
     render(<TamperPanel />);
 
     // initial auto-verify: VALID
     expect(await screen.findByText(/SIGNATURE VALID/)).toBeTruthy();
 
-    // edit the model (a signed field), then re-verify -> TAMPERED
+    // edit the model (a signed field), then re-verify -> TAMPERED + the forensic diff
     const modelInput = screen.getByDisplayValue(ORIG_MODEL);
     fireEvent.change(modelInput, { target: { value: "evil-model" } });
     fireEvent.click(screen.getByText("Re-verify"));
 
     expect(await screen.findByText(/TAMPERED/)).toBeTruthy();
+    expect(await screen.findByText(/seedream-5.0-lite \(authentic\)/)).toBeTruthy();
+    expect(screen.getByText("evil-model")).toBeTruthy();
   });
 });

@@ -39,6 +39,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _MAX_OBJECT_BYTES = 25 * 1024 * 1024  # cap a fetched object; skip anything larger
+_MAX_EVENTS_PER_REQUEST = 100  # one signed payload cannot drive unbounded fetches/decodes
 _RECENT_MAX = 20
 _recent: list[dict[str, Any]] = []
 _recent_lock = threading.Lock()
@@ -48,16 +49,26 @@ def _watch_prefix() -> str:
     return os.environ.get("B2_EVENT_PREFIX", "ingest/")
 
 
+def _expected_bucket() -> str | None:
+    """The bucket the rule is configured on; events for any other bucket are ignored."""
+    return os.environ.get("B2_EVENT_BUCKET") or os.environ.get("B2_BUCKET_DEV") or None
+
+
 def _signing_secret() -> str | None:
     return os.environ.get("B2_EVENT_SIGNING_SECRET") or None
 
 
 def _verify_signature(raw: bytes, header: str | None, secret: str) -> bool:
-    """Constant-time check of the lowercase hex HMAC-SHA256 of the raw body (B2's scheme)."""
+    """Constant-time check of the lowercase hex HMAC-SHA256 of the raw body (B2's scheme). A
+    malformed (non-hex) header returns False rather than raising, so a crafted header cannot 500."""
     if not header:
         return False
-    expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, header.strip().lower())
+    try:
+        provided = bytes.fromhex(header.strip())
+    except ValueError:
+        return False
+    expected = hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).digest()
+    return hmac.compare_digest(expected, provided)
 
 
 def _record(entry: dict[str, Any]) -> None:
@@ -88,18 +99,30 @@ async def _ingest_events(events: list[Any]) -> tuple[int, int]:
 
     storage = sbr.get_storage()
     resolver = sbr.get_resolver()
+    log = sbr.get_log()
     prefix = _watch_prefix()
+    expected_bucket = _expected_bucket()
     ingested = 0
     skipped = 0
     for ev in events:
-        name = str(ev.get("objectName", "")) if isinstance(ev, dict) else ""
-        et = str(ev.get("eventType", "")) if isinstance(ev, dict) else ""
-        if not et.startswith("b2:ObjectCreated") or not name.startswith(prefix) or storage is None:
+        if not isinstance(ev, dict):
             skipped += 1
             continue
-        size = ev.get("objectSize") or 0
-        if isinstance(size, int) and size > _MAX_OBJECT_BYTES:
-            logger.warning("b2-event: skipping oversized object %s (%d bytes)", name, size)
+        name = str(ev.get("objectName", ""))
+        et = str(ev.get("eventType", ""))
+        bucket = str(ev.get("bucketName", ""))
+        size = ev.get("objectSize")
+        # Hard gate BEFORE any fetch: only ObjectCreated, our bucket, our prefix, and a declared
+        # size that is a valid bounded int (a missing/negative/oversized size never reaches B2).
+        if (
+            not et.startswith("b2:ObjectCreated")
+            or not name.startswith(prefix)
+            or storage is None
+            or (expected_bucket is not None and bucket != expected_bucket)
+            or not isinstance(size, int)
+            or size < 0
+            or size > _MAX_OBJECT_BYTES
+        ):
             skipped += 1
             continue
         try:
@@ -108,7 +131,7 @@ async def _ingest_events(events: list[Any]) -> tuple[int, int]:
             logger.warning("b2-event: fetch failed for %s: %s", name, exc)
             skipped += 1
             continue
-        if len(data) > _MAX_OBJECT_BYTES:
+        if len(data) > _MAX_OBJECT_BYTES:  # backstop if the declared size lied
             skipped += 1
             continue
         try:
@@ -120,23 +143,32 @@ async def _ingest_events(events: list[Any]) -> tuple[int, int]:
             skipped += 1
             continue
         sha = hashlib.sha256(data).hexdigest()
-        manifest_id = f"urn:c2pa:b2-{sha[:32]}"
-        if await run_in_threadpool(resolver.get_manifest, manifest_id) is not None:
-            skipped += 1  # idempotent: already registered + recoverable on a redelivery
+        manifest_id = f"urn:c2pa:b2-{sha}"
+        existing = await run_in_threadpool(resolver.get_manifest, manifest_id)
+        already_logged = bool(await run_in_threadpool(log.index_for, manifest_id))
+        if existing is not None and already_logged:
+            skipped += 1  # true idempotent redelivery: registered AND proven
             continue
-        bucket = str(ev.get("bucketName", ""))
-        manifest = Manifest(
+        # Use the registered manifest's hash on a heal so the proof matches the registered record.
+        manifest = existing or Manifest(
             manifest_id=manifest_id,
             asset_sha256=sha,
             created_at=datetime.now(UTC).isoformat(),
             system_provenance={"source": "b2-event-ingest", "bucket": bucket, "objectKey": name},
             soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=f"B2{sha[:10]}")],
         )
-        await run_in_threadpool(resolver.register, manifest, image, f"B2{sha[:10]}")
-        try:
-            await run_in_threadpool(sbr.get_log().append, manifest_id, manifest.canonical_hash())
-        except Exception as exc:  # noqa: BLE001 - registered + recoverable; just no proof yet
-            logger.error("b2-event: %s registered but log append failed: %s", manifest_id, exc)
+        if existing is None:
+            await run_in_threadpool(resolver.register, manifest, image, f"B2{sha[:10]}")
+        if not already_logged:
+            # Fail loudly on an append failure (matches /ingest): the asset is recoverable but has
+            # no inclusion proof. A B2 redelivery heals it via the existing-but-unlogged branch.
+            try:
+                await run_in_threadpool(log.append, manifest_id, manifest.canonical_hash())
+            except Exception as exc:  # noqa: BLE001 - surface it; never return ok with no proof
+                logger.error("b2-event: %s registered, log append failed: %s", manifest_id, exc)
+                raise HTTPException(
+                    status_code=500, detail="manifest registered but log append failed"
+                ) from exc
         _record(
             {
                 "objectKey": name,
@@ -176,6 +208,8 @@ async def b2_event(
         events = []
     if any(isinstance(e, dict) and e.get("eventType") == "b2:TestEvent" for e in events):
         return JSONResponse({"status": "test-ok"})
+    if len(events) > _MAX_EVENTS_PER_REQUEST:
+        raise HTTPException(status_code=413, detail="too many events in one notification")
 
     ingested, skipped = await _ingest_events(events)
     return JSONResponse({"status": "ok", "ingested": ingested, "skipped": skipped})

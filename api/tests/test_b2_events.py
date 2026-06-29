@@ -37,6 +37,7 @@ def _png(seed: int) -> bytes:
 @pytest.fixture
 def storage(monkeypatch: pytest.MonkeyPatch) -> Iterator[InMemoryStorage]:
     monkeypatch.setenv("B2_EVENT_SIGNING_SECRET", _SECRET)
+    monkeypatch.setenv("B2_EVENT_BUCKET", "rooted-dev")
     sbr.set_resolver(Resolver(InMemoryIndex(), FakeWatermarker()))
     sbr.set_log(TransparencyLog())
     st = InMemoryStorage()
@@ -160,3 +161,66 @@ async def test_webhook_is_idempotent(storage: InMemoryStorage) -> None:
         second = await _post(c, _event("ingest/dup.png", size=len(png)))
     assert first.json()["ingested"] == 1
     assert second.json()["ingested"] == 0  # already registered on redelivery
+
+
+async def test_webhook_skips_wrong_bucket(storage: InMemoryStorage) -> None:
+    storage.put("ingest/x.png", _png(12))
+    ev = _event("ingest/x.png")
+    ev["events"][0]["bucketName"] = "someone-elses-bucket"
+    async with _client() as c:
+        r = await _post(c, ev)
+    assert r.json()["ingested"] == 0
+    assert r.json()["skipped"] == 1
+
+
+async def test_webhook_caps_event_count(storage: InMemoryStorage) -> None:
+    many = {
+        "events": [
+            {
+                "eventType": "b2:ObjectCreated:Upload",
+                "bucketName": "rooted-dev",
+                "objectName": f"ingest/{i}.png",
+                "objectSize": 4096,
+            }
+            for i in range(b2_events._MAX_EVENTS_PER_REQUEST + 1)
+        ]
+    }
+    async with _client() as c:
+        r = await _post(c, many)
+    assert r.status_code == 413
+
+
+async def test_webhook_non_hex_signature_is_401_not_500(storage: InMemoryStorage) -> None:
+    raw = json.dumps(_event("ingest/x.png")).encode()
+    async with _client() as c:
+        r = await c.post(
+            "/webhooks/b2-event",
+            content=raw,
+            headers={"X-Bz-Event-Notification-Signature": "not-hex-zz!!"},
+        )
+    assert r.status_code == 401
+
+
+async def test_webhook_skips_missing_object_size(storage: InMemoryStorage) -> None:
+    storage.put("ingest/nosize.png", _png(13))
+    ev = _event("ingest/nosize.png")
+    del ev["events"][0]["objectSize"]
+    async with _client() as c:
+        r = await _post(c, ev)
+    assert r.json()["ingested"] == 0
+
+
+async def test_webhook_500_on_log_append_failure(
+    storage: InMemoryStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A transparency-log append failure must fail loudly (no silent ok on an unproven manifest).
+    png = _png(14)
+    storage.put("ingest/boom.png", png)
+
+    def _raise(*_a: object, **_k: object) -> None:
+        raise RuntimeError("log down")
+
+    monkeypatch.setattr(sbr.get_log(), "append", _raise)
+    async with _client() as c:
+        r = await _post(c, _event("ingest/boom.png", size=len(png)))
+    assert r.status_code == 500

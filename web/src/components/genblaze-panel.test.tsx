@@ -44,7 +44,7 @@ describe("GenblazePanel", () => {
   it("renders the reconciled two-layer view", async () => {
     mockFetch(SAMPLE);
     render(<GenblazePanel />);
-    expect(await screen.findByText(/reconciled — same asset, both layers verify/)).toBeTruthy();
+    expect(await screen.findByText(/reconciled: same asset, both layers verify/)).toBeTruthy();
     expect(screen.getByText(/Genblaze · integrity/)).toBeTruthy();
     expect(screen.getByText(/Rooted · signed/)).toBeTruthy();
     expect(screen.getByText(/via ObjectStorageSink/)).toBeTruthy();

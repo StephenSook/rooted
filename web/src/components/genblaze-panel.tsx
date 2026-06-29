@@ -31,7 +31,7 @@ type Reconcile = {
   reconciled: boolean;
 };
 
-const short = (s: string | null, n = 16) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "—");
+const short = (s: string | null, n = 16) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "-");
 
 export function GenblazePanel() {
   const [d, setD] = useState<Reconcile | null>(null);
@@ -65,7 +65,7 @@ export function GenblazePanel() {
             className={`mb-3 font-mono text-sm ${d.reconciled ? "text-emerald-300" : "text-amber-400"}`}
           >
             {d.reconciled
-              ? "✓ reconciled — same asset, both layers verify"
+              ? "✓ reconciled: same asset, both layers verify"
               : "not reconciled"}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -92,7 +92,7 @@ export function GenblazePanel() {
                 <Row k="signature" v={d.rooted.signatureValid ? "✓ valid" : "✗ invalid"} />
                 <Row
                   k="model"
-                  v={String((d.rooted.systemProvenance as { model?: string })?.model ?? "—")}
+                  v={String((d.rooted.systemProvenance as { model?: string })?.model ?? "-")}
                 />
                 <Row k="signing key" v={short(d.rooted.publicKeyHex)} />
               </dl>

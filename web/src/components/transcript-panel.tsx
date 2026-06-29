@@ -39,9 +39,9 @@ type Reconcile = {
   reconciled: boolean;
 };
 
-const short = (s: string | null, n = 16) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "—");
+const short = (s: string | null, n = 16) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "-");
 const prov = (d: Reconcile, k: string) =>
-  String((d.rooted.systemProvenance as Record<string, unknown>)?.[k] ?? "—");
+  String((d.rooted.systemProvenance as Record<string, unknown>)?.[k] ?? "-");
 
 export function TranscriptPanel() {
   const [d, setD] = useState<Reconcile | null>(null);
@@ -75,7 +75,7 @@ export function TranscriptPanel() {
             className={`mb-3 font-mono text-sm ${d.reconciled ? "text-emerald-300" : "text-amber-400"}`}
           >
             {d.reconciled
-              ? "✓ reconciled — same transcript, both layers verify"
+              ? "✓ reconciled: same transcript, both layers verify"
               : "not reconciled"}
           </p>
 
@@ -113,7 +113,7 @@ export function TranscriptPanel() {
               <dl className="grid gap-1 font-mono text-xs text-white/70">
                 <Row k="connector" v={`${prov(d, "provider")} · ${prov(d, "model")}`} />
                 <Row k="hash verified" v={d.genblaze.verifyHash ? "✓ true" : "✗ false"} />
-                <Row k="words" v={`${d.wordCount} · ${d.language ?? "—"} · ${d.audioDuration ?? "—"}s`} />
+                <Row k="words" v={`${d.wordCount} · ${d.language ?? "-"} · ${d.audioDuration ?? "-"}s`} />
                 <Row k="canonical hash" v={short(d.genblaze.canonicalHash)} />
                 <Row k="output sha256" v={short(d.genblaze.outputAssetSha256)} />
                 <Row

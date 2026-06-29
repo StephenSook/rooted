@@ -1,89 +1,156 @@
-# Rooted
+# ROOTED
 
-An open-source, vendor-neutral C2PA Soft Binding Resolution (SBR) server backed by Backblaze B2.
-Rooted recovers stripped C2PA provenance manifests for AI-generated media. When an image is generated
-and signed, then later shows up with its embedded manifest destroyed (after a screenshot or a
-re-encode), Rooted recovers the full provenance by matching an invisible watermark or a
-perceptual-hash fingerprint against manifests stored in B2, and returns the recovered, signed
-manifest with a tamper-evident transparency-log proof.
+**Recover stripped C2PA provenance for AI-generated media, on Backblaze B2.**
 
-Backblaze B2 is the recovery repository the whole system depends on, not an add-on. Rooted runs on B2
-Cloud Storage (S3-compatible object storage): every signed asset, manifest, and COSE signature is
-addressed by its content hash on B2, so recovery returns exactly the bytes that were signed, and the
-Merkle transparency checkpoints seal to a B2 Object Lock bucket under compliance retention, immutable
-by construction. The whole point of an SBR server is a durable, vendor-neutral repository to recover
-from, and that repository is B2.
+[![CI](https://github.com/StephenSook/rooted/actions/workflows/ci.yml/badge.svg)](https://github.com/StephenSook/rooted/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Live demo](https://img.shields.io/badge/live-demo-34d399.svg)](https://rooted-web-phi.vercel.app)
+[![Python](https://img.shields.io/badge/python-3.11--3.13-3776AB.svg?logo=python&logoColor=white)](./pyproject.toml)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black.svg?logo=nextdotjs)](./web)
+[![C2PA SBR](https://img.shields.io/badge/C2PA-SBR_2.4-6366f1.svg)](https://spec.c2pa.org/specifications/specifications/2.4/softbinding/Decoupled.html)
+
+Rooted is an open-source, vendor-neutral C2PA Soft Binding Resolution (SBR) server. When an image,
+audio clip, or video is generated and signed, then later shows up with its embedded C2PA manifest
+destroyed (after a screenshot or a re-encode), Rooted recovers the full provenance by matching an
+invisible watermark or a perceptual-hash fingerprint against manifests stored in Backblaze B2, and
+returns the recovered, signed manifest with a tamper-evident transparency-log proof.
+
+Backblaze B2 is the recovery repository the whole system depends on, not an add-on. Every signed
+asset, manifest, and COSE signature is addressed by its content hash on B2, so recovery returns
+exactly the bytes that were signed, and the Merkle transparency checkpoints seal to a B2 Object Lock
+bucket under compliance retention, immutable by construction. An SBR server is only as good as the
+durable, vendor-neutral repository it recovers from, and that repository is B2.
 
 ## Live demo
 
-- Web: https://rooted-web-phi.vercel.app
-- API: https://rooted-api-ubvc.onrender.com
+| Surface | Where |
+|---|---|
+| Web | <https://rooted-web-phi.vercel.app> |
+| SBR API | <https://rooted-api-ubvc.onrender.com> |
+| MCP server | `https://rooted-api-ubvc.onrender.com/mcp` (judge-connectable over HTTP) |
+| CLI | `pip install` the `cli/` package, then `rooted recover stripped.jpg` |
+| Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
 
-Open the site and click "recover the demo asset": a real AI-generated image (created with Genblaze on
-GMI Cloud, model seedream-5.0-lite) is recovered to VERIFIED, the recovered manifest's system
-provenance names that model, a separately C2PA-credentialed sample is read in the browser to show its
-Content Credentials, and the transparency log renders as a 3D Merkle tree. The deployed instance
-stores each asset, manifest, and signature content-addressably on Backblaze B2 (bucket rooted-dev),
-verifiable live at `/demo/storage`; the recovery index and transparency log run in-memory on the live
-instance and are wired to Postgres for the production path. Provenance proves origin, not truth.
+Open the site and click **recover the demo asset**: a real AI-generated image (created with Genblaze
+on GMI Cloud, model seedream-5.0-lite) is recovered to **VERIFIED**, the recovered manifest names that
+model, a separately C2PA-credentialed sample is read in the browser to show its Content Credentials,
+and the transparency log renders as a 3D Merkle tree. The deployed instance stores each asset,
+manifest, and signature content-addressably on Backblaze B2 (verifiable live at `/demo/storage`) and
+runs recovery on Postgres + HNSW. Provenance proves origin, not truth.
 
-## Why it exists
+## The problem
 
 Fewer than 1% of images published online carry C2PA metadata, and embedded manifests are routinely
 stripped by social platforms and re-encodes. C2PA's answer is durable recovery: recover the stripped
-manifest from a repository using a watermark or fingerprint. The only production manifest-recovery
-service today is Adobe's, and it is Adobe-only. Rooted is the open, vendor-neutral version, on
-commodity object storage you control.
+manifest from a repository using a watermark or a fingerprint. The reference production
+manifest-recovery service today is Adobe's Content Credentials Cloud, and it is a closed,
+single-vendor hosted service. Rooted is the open, self-hostable, vendor-neutral version, on commodity
+object storage you control, across image, audio, and video, with a WORM transparency log and an MCP
+surface for AI agents.
 
-## The loop
+## What it does
+
+1. **Generate and sign.** A provider generates media; Rooted watermarks it (TrustMark variant P),
+   computes a PDQ perceptual hash, signs the manifest (Ed25519 / COSE), maps it to a C2PA claim, and
+   stores the asset, manifest, and signature on Backblaze B2.
+2. **Index and log.** The watermark id and the PDQ `bit(256)` hash go into the recovery index
+   (Postgres + pgvector HNSW), and the manifest's canonical hash is appended to a Merkle transparency
+   log whose signed checkpoints seal to a B2 Object Lock bucket.
+3. **Recover.** The asset circulates and loses its manifest. Given the stripped bytes, the SBR API
+   tries the watermark (an exact pointer) first, then falls back to the PDQ fingerprint (nearest
+   within Hamming distance 31), returns the recovered signed manifest with a SB 942 redaction split
+   (system provenance out, personal provenance withheld), and an inclusion proof pinned to a signed
+   checkpoint.
+
+## Rooted in one loop
 
 ```mermaid
 flowchart LR
-    G["Generate<br/>(Genblaze: GMICloud + OpenAI fallback)"] --> W["Watermark<br/>(TrustMark variant P)"]
+    G["Generate<br/>(Genblaze, multi-provider)"] --> W["Watermark<br/>(TrustMark variant P)"]
     W --> S["Store to Backblaze B2<br/>(content-addressable)"]
     S --> SG["Sign<br/>(Ed25519 / COSE + C2PA claim)"]
     SG --> IDX["Index for recovery<br/>(watermark id + PDQ bit(256))"]
     IDX --> L["Append to Merkle log<br/>(signed checkpoints, B2 Object Lock)"]
-    STRIP["Asset circulates,<br/>manifest stripped"] -.screenshot / re-encode.-> R
+    STRIP["Asset circulates,<br/>manifest stripped"] -. "screenshot / re-encode" .-> R
     L --> R["SBR API recovery<br/>watermark, then PDQ fallback"]
     R --> RED["Redact (SB 942 split)<br/>system out, personal withheld"]
     RED --> V["VERIFIED + inclusion proof<br/>pinned to a signed checkpoint"]
 ```
 
-Recovery tries the watermark (an exact pointer) first, then falls back to the PDQ perceptual-hash
-(nearest within Hamming distance 31), with a cross-layer integrity check that rejects a watermark id
-pointing at an unrelated asset. Rooted also exposes its own MCP server so an AI agent can verify
-provenance, recover manifests, and audit the transparency log conversationally.
+## Architecture
 
-## Repo layout
+Five surfaces over one trust core over two stores. Backblaze B2 holds the durable, content-addressed
+record and the WORM transparency seal; Postgres holds the fast recovery index.
 
+```mermaid
+flowchart TB
+    subgraph Surfaces
+        WEB["Web<br/>Next 15 + R3F"]
+        API["SBR API<br/>FastAPI"]
+        MCP["MCP server<br/>FastMCP"]
+        CLI["CLI<br/>rooted"]
+        EXT["Browser extension<br/>MV3"]
+    end
+    subgraph Core["Trust core (packages/provenance)"]
+        RES["Resolver<br/>watermark + PDQ"]
+        SIGN["Signer<br/>Ed25519/COSE + C2PA claim"]
+        LOG["Merkle transparency log"]
+    end
+    subgraph Stores
+        B2[("Backblaze B2<br/>assets · manifests · signatures<br/>WORM checkpoints")]
+        PG[("Postgres + pgvector<br/>bit(256) HNSW index")]
+    end
+    WEB --> API
+    CLI --> API
+    EXT --> API
+    API --> MCP
+    API --> RES --> SIGN --> LOG
+    RES --> PG
+    SIGN --> B2
+    LOG --> B2
+    B2 -. "event notification webhook" .-> API
 ```
-/api          FastAPI SBR API (C2PA v2.4 routes), signing, SB 942 redaction, transparency routes
-/worker       the generate -> watermark -> store -> sign -> index -> log ingest pipeline
-/mcp          Rooted's own MCP server (FastMCP): verify_asset, recover_manifest, query_transparency_log
-/packages
-  /provenance trust core: models + canonical hashing, Ed25519/COSE, c2pa-python claim, PDQ, Merkle log
-  /storage    Backblaze B2 (b2sdk), PostgresIndex (pgvector-free bit(256) Hamming), transparency store
-/web          Next.js 15 front end: R3F galaxy, recovery reveal, C2PA display, 3D Merkle explorer
-```
 
-## Status (what is wired today, honestly)
+## What is real (capability honesty)
+
+Everything below is wired end to end and demonstrable. Numbers in any submission come from the test
+suite, never from draft prose.
 
 | Area | State |
 |---|---|
-| Trust core, recovery, SBR API (camelCase per the C2PA SBR spec) | wired, tested, CI green |
-| Transparency log (signed checkpoint + independently-verifiable, restart-durable proofs) | wired, tested |
-| FastMCP product server (three curated tools) | wired, tested |
-| PostgresIndex (pooled + self-healing, atomic ingest) selected by `DATABASE_URL` | wired, real-Postgres tested via pgserver |
-| Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation (seedream-5.0-lite), and the full generate -> store-on-B2 -> recover loop was run end to end |
-| TrustMark variant P watermark | wired + verified behind the `watermark` extra; opt-in in the API resolver (`ROOTED_REAL_WATERMARK`); recovery also works via the PDQ fallback |
-| Front end (Next 15, R3F, typed openapi client) + Render/Vercel deploy | wired + live at the URLs above (the demo seed runs credential-free; with B2 env set it stores assets on Backblaze B2) |
-| Audio + video modalities (spectral-PDQ audio, per-keyframe video PDQ) | wired + live |
+| SBR recovery loop (watermark, then PDQ fallback), C2PA v2.4 routes, camelCase per the spec | wired, tested, live |
+| Backblaze B2 as the recovery repository (content-addressed assets / manifests / signatures) | wired + live |
+| Merkle transparency log + signed checkpoints, sealed to a B2 Object Lock (WORM) bucket, read back + verified | wired + live |
+| Postgres + pgvector HNSW `bit(256)` recovery index, selected by `DATABASE_URL` | wired + live (`recoveryIndex: postgres+hnsw`) |
+| Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation |
+| Genblaze AssemblyAI speech-to-text: a real speech clip to a hash-verified transcript, reconciled with Rooted's signature, stored on B2 | wired + live |
+| Genblaze writes its own run to B2 via its `ObjectStorageSink`, reconciled with Rooted's signature | wired + live |
+| Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), vendor-neutral | wired + live |
+| TrustMark variant P watermark (opt-in via `ROOTED_REAL_WATERMARK`) + PDQ fallback | wired + verified |
+| Audio + video modalities (spectral audio fingerprint, per-keyframe video PDQ) | wired + live |
 | Green C2PA "Trusted" via the conformance test trust list (labeled FOR TESTING ONLY) | wired + live |
-| Merkle checkpoint sealed to B2 Object Lock (compliance WORM), read back + signature verified | wired + live |
-| Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), C2PA lineage DAG, live MCP agent | wired + live |
+| C2PA ingredient-DAG lineage + a 3D graph; tamper-diff forensics (which signed field changed vs the registry) | wired + live |
+| Side-by-side vs the official C2PA reader (No Content Credentials vs RECOVERED on the same bytes) | wired + live |
+| FastMCP product server (judge-connectable over HTTP) + a live Claude provenance agent | wired + live |
+| Published `rooted` SBR CLI | wired + live |
+| Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
+| B2 Event-Notification ingest (B2 upload to a signed webhook to auto-ingest to recoverable) | wired; pending account-level Event Notifications enablement |
 
-Numbers in any submission are taken from the actual test suite, never copied from draft prose.
+## The surfaces
+
+- **Web** (`/web`): a Next.js 15 front end with the FAILED to VERIFIED recovery reveal, the side-by-side
+  vs the official C2PA reader, the Content Credentials panel (c2pa-web), and a 3D Merkle explorer.
+- **SBR API** (`/api`): the C2PA v2.4 Soft Binding Resolution routes, signing, the SB 942 redaction,
+  the transparency routes, and the B2 event-ingest webhook.
+- **MCP server** (`/mcp` and mounted at `/mcp` on the API): three curated tools so an AI agent can
+  verify provenance, recover manifests, and query the transparency log conversationally.
+- **CLI** (`/cli`): the published `rooted` command (`recover`, `status`, `manifest`, `proof`,
+  `algorithms`) wrapping the public SBR API.
+- **Browser extension** (`/extension`): a Manifest V3 extension that recovers provenance for any image
+  on the web from a right-click.
+- **B2 event ingest**: a Backblaze B2 Event Notification rule posts a signed webhook when an object
+  lands under a watched prefix; Rooted verifies the HMAC, fetches the object, and registers it for
+  recovery. Drop an asset in B2 and it auto-becomes recoverable.
 
 ## SBR API
 
@@ -91,10 +158,36 @@ Real C2PA v2.4 Soft Binding Resolution routes, contract-tested with schemathesis
 `/openapi.json`:
 
 - `GET /services/supportedAlgorithms` (PDQ is an internal index, never advertised)
-- `POST /matches/byContent`, `GET /matches/byBinding` -> `{matches: [{manifestId, similarityScore?}]}`
+- `POST /matches/byContent`, `GET /matches/byBinding` to `{matches: [{manifestId, similarityScore?}]}`
 - `GET /manifests/{id}` (redacted: system provenance out, personal provenance withheld)
 - `GET /transparency/checkpoint`, `GET /transparency/proof/{id}` (proof pinned to a signed checkpoint)
 - `POST /ingest` (trusted generation-side; gated by `ROOTED_INGEST_KEY`, required in production)
+
+## Tech stack
+
+- **Backend**: Python 3.11 to 3.13, FastAPI + Pydantic v2 (async-first), `uv` workspace. In-process
+  generation, no task queue. Postgres index via sync psycopg + raw SQL (no ORM, no migrations).
+- **Provenance**: c2pa-python, TrustMark (variant P), pdqhash, cryptography (Ed25519), pycose
+  (COSE_Sign1), pymerkle.
+- **Storage / data**: Backblaze B2 (b2sdk), Postgres 16 + pgvector 0.8 (HNSW `bit_hamming_ops`).
+- **Front end**: Next.js 15, React 19, Tailwind v4, three.js + react-three-fiber, react-force-graph,
+  @contentauth/c2pa-web, openapi-typescript + openapi-fetch + TanStack Query.
+- **MCP**: FastMCP. **CLI**: typer + httpx. **Extension**: Manifest V3 (no build step).
+
+## Repo layout
+
+```
+/api          FastAPI SBR API (C2PA v2.4 routes), signing, SB 942 redaction, transparency, B2 event webhook
+/worker       the generate -> watermark -> store -> sign -> index -> log ingest pipeline + Genblaze generator
+/mcp          Rooted's own MCP server (FastMCP): verify_asset, recover_manifest, query_transparency_log
+/cli          the published `rooted` SBR CLI (rooted-sbr)
+/extension    Manifest V3 browser extension: right-click any image to recover its provenance
+/packages
+  /provenance trust core: models + canonical hashing, Ed25519/COSE, c2pa-python claim, PDQ, Merkle log
+  /storage    Backblaze B2 (b2sdk), PostgresIndex (pgvector bit(256) HNSW), transparency store
+/web          Next.js 15 front end: R3F galaxy, recovery reveal, C2PA display, 3D Merkle explorer
+/scripts      one-shot ops (B2 Object Lock activation, B2 event-rule configurator)
+```
 
 ## Quickstart
 
@@ -105,54 +198,51 @@ uv run fastapi dev api/main.py             # the SBR API on :8000 (ingest runs i
 cd web && pnpm install && pnpm dev         # the front end
 ```
 
-`DATABASE_URL` selects the Postgres index (live recovery on Postgres); unset, Rooted runs on an
+`DATABASE_URL` selects the Postgres index (live recovery on Postgres + HNSW); unset, Rooted runs on an
 in-memory index so the demo needs no database. `docker compose up` brings up Postgres (pgvector) for
 local Postgres-backed runs.
 
-## Testing
+## Verification
 
 ```bash
 uv run ruff check . && uv run ruff format --check .   # CI gates on these
-uv run pytest                                         # incl. real-Postgres tests via pgserver
 uv run mypy .                                         # strict; CI gates on this too
+uv run pytest                                         # incl. real-Postgres tests via pgserver
 uvx schemathesis run http://localhost:8000/openapi.json --checks all   # SBR contract
-uvx locust -f load/locustfile.py --host http://localhost:8000 --headless -u 20 -r 5 -t 15s  # load
 cd web && pnpm test                                  # front-end component tests (Vitest + RTL), CI gate
 cd web && pnpm test:e2e                               # Playwright E2E vs the live (or E2E_BASE_URL) stack
 ```
 
-Front-end component tests (Vitest + React Testing Library) cover the 2D recovery and storage UI
-(the FAILED/VERIFIED reveal and the Backblaze B2 panel); the WebGL/R3F scene and the c2pa-web (WASM)
-panel are covered by the live demo, not unit tests. The Playwright E2E (`pnpm test:e2e`) drives the
-real recovery flow end to end (front end -> /api proxy -> SBR recovery) against the deployed site by
-default (override with `E2E_BASE_URL`); it is a manual / demo-day smoke, not part of the fast CI
-(a browser download is heavy).
+The Playwright E2E drives the real recovery flow end to end (front end to the `/api` proxy to SBR
+recovery) against the deployed site by default. A load smoke against the SBR read endpoints held 0
+failures at p95 around 6 ms, so the live demo holds up under concurrent judges.
 
-The load smoke hits the SBR read endpoints; a recent run held 0 failures at p95 ~6 ms (~60 req/s),
-so the live demo will not fall over under concurrent judges.
+## Deploy
+
+- **Front end**: Vercel (`rooted-web`), typed from the backend `/openapi.json`, `/api/*` proxied to the
+  API.
+- **API + Postgres**: Render (`rooted-api`, always-on) + a managed Postgres.
+- **B2 buckets**: a dev bucket for iteration and a separate Object Lock (compliance retention) bucket
+  for the WORM transparency seal.
+
+A scheduled keepalive ping keeps the live app and database warm through the judging window.
 
 ## Honesty and limitations
 
 - Provenance proves origin, not truth. A self-signed credential shows "Valid," not the green
-  "Trusted" state, which needs a Conformance-Program CA. Rooted surfaces this distinction honestly in
-  the UI: the green "Trusted" state is shown by validating against the C2PA conformance test trust
-  list, labeled FOR TESTING ONLY on screen; a production deployment validates against the C2PA
-  production trust list.
-- The C2PA Content Credentials panel reads a separately C2PA-credentialed sample to demonstrate the
-  in-browser reading capability; the recovered stripped asset has no embedded manifest (that is the
-  point of recovery), so its credentials come from the repository, not from the bytes.
-- The Merkle checkpoint is sealed to a B2 Object Lock (compliance-retention) bucket: set
-  `B2_BUCKET_LOCKED` to a fileLock-enabled bucket (Object Lock must be enabled at bucket creation,
-  and the app key needs `writeFileRetentions` + `readFileRetentions`) and the deploy seals the signed
-  tree head once at startup and reads it back, reporting the real compliance retain-until at
-  `GET /transparency/checkpoint/object`. Without a locked bucket the same write / read-back / signature
-  / delete-refusal contract runs against the in-memory model and the surface is labeled `modeled`, so
-  it never passes as a real B2 seal. The lock behavior is covered by tests (the in-memory contract and
-  the real b2sdk `FileRetentionSetting` shape).
-- Hamming search is exact via native Postgres `bit_count`; pgvector HNSW `bit_hamming_ops` is an
-  optional accelerator for very large indexes, not claimed as wired.
-- Known follow-ups on the deployed Postgres path: a single ingest transaction spanning the index and
-  transparency stores, a lock around lazy resolver init, and closing pools on shutdown.
+  "Trusted" state, which needs a Conformance-Program CA. Rooted shows the green "Trusted" state by
+  validating against the C2PA conformance test trust list, labeled FOR TESTING ONLY on screen; a
+  production deployment validates against the C2PA production trust list.
+- Rooted builds on Adobe's open-source TrustMark variant P watermark; the recovery concept and the
+  canonical SBR API are also Adobe's prior art. Rooted's contribution is the open, self-hostable
+  server, the Backblaze B2 recovery repository, the WORM transparency log, and the MCP surface, not
+  the watermark or the SBR idea.
+- PDQ is an internal recovery index, not a C2PA-registered fingerprint algorithm, so it is never
+  advertised on `/services/supportedAlgorithms`.
+- A single Rooted instance only recovers manifests it has ingested. The SBR spec's larger goal is
+  federated, cross-repository lookup; a single instance does not deliver that network effect.
+- The B2 Event-Notification ingest is wired and tested, and goes live once Backblaze enables
+  account-level Event Notifications (a request-gated feature).
 
 ## License
 

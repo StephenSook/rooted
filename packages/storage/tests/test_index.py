@@ -104,6 +104,21 @@ def test_nearest_fingerprint_threshold(index: PostgresIndex) -> None:
     assert index.nearest_fingerprint(base, 10) == ("near", 10)  # boundary is inclusive
 
 
+def test_hnsw_path_when_pgvector_available(index: PostgresIndex) -> None:
+    # On pgvector 0.7+ the `<~>` HNSW Hamming path is selected; assert it returns the same nearest
+    # as the exact scan. On pgserver (pgvector 0.6.2) or a Postgres without pgvector this skips (the
+    # bit_count path is covered by test_nearest_fingerprint_threshold).
+    if not index._hnsw:
+        pytest.skip("pgvector >= 0.7 (bit_hamming_ops) not available on this database")
+    base = "0" * 256
+    near = "0" * 246 + "1" * 10  # hamming distance 10
+    far = "0" * 216 + "1" * 40  # hamming distance 40
+    index.put_fingerprint(near, "near")
+    index.put_fingerprint(far, "far")
+    assert index.nearest_fingerprint(base, PDQ_HAMMING_THRESHOLD) == ("near", 10)
+    assert index.nearest_fingerprint(base, 5) is None  # nearest (10) exceeds the threshold
+
+
 def test_fingerprints_for(index: PostgresIndex) -> None:
     index.put_fingerprint("0" * 256, "m")
     index.put_fingerprint("1" * 256, "m")

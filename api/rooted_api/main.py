@@ -33,6 +33,7 @@ from rooted_api.checkpoint import seal_startup_checkpoint
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_audio_demo, seed_demo, seed_providers, seed_video_demo
 from rooted_api.generate import router as generate_router
+from rooted_api.limits import LimitRequestBodyMiddleware
 from rooted_api.lineage import router as lineage_router
 from rooted_api.sbr import (
     get_audio_resolver,
@@ -102,6 +103,10 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
         app_lifespan = lifespan
 
     app = FastAPI(title="Rooted SBR API", version="0.1.0", lifespan=app_lifespan)
+    # Reject an over-cap request body before it is buffered, so an unauthenticated upload to the
+    # public recovery endpoints cannot exhaust disk/RAM on the live instance. The per-endpoint asset
+    # caps in sbr.py remain as a second line of defense.
+    app.add_middleware(LimitRequestBodyMiddleware)
     app.include_router(sbr_router)
     app.include_router(demo_router)
     app.include_router(generate_router)

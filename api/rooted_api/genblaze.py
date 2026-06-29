@@ -67,6 +67,20 @@ class GenblazeReconcileResponse(CamelModel):
     reconciled: bool
 
 
+def _unavailable_integrity() -> GenblazeIntegrity:
+    return GenblazeIntegrity(
+        available=False,
+        schema_version=None,
+        run_id=None,
+        canonical_hash=None,
+        verify_hash=False,
+        output_asset_sha256=None,
+        generator="genblaze",
+        mode="integrity (Mode 1)",
+        stored_on_b2=True,
+    )
+
+
 def _genblaze_integrity(manifest_json: str) -> GenblazeIntegrity:
     """Parse + RE-VERIFY the native Genblaze manifest at request time (not a stored bool). Degrades
     to available=false rather than 500 if the manifest cannot be parsed."""
@@ -91,17 +105,7 @@ def _genblaze_integrity(manifest_json: str) -> GenblazeIntegrity:
         )
     except Exception as exc:  # noqa: BLE001 - a demo surface must degrade, never 500
         logger.warning("genblaze manifest parse/verify failed: %s", exc)
-        return GenblazeIntegrity(
-            available=False,
-            schema_version=None,
-            run_id=None,
-            canonical_hash=None,
-            verify_hash=False,
-            output_asset_sha256=None,
-            generator="genblaze",
-            mode="integrity (Mode 1)",
-            stored_on_b2=True,
-        )
+        return _unavailable_integrity()
 
 
 @router.get(
@@ -113,9 +117,25 @@ async def genblaze_manifest() -> GenblazeReconcileResponse:
     the Genblaze output asset sha256 equals our asset_sha256 equals the actual bytes' sha256."""
     from rooted_api import sbr
 
-    data = _ASSET.read_bytes()
+    try:
+        data = _ASSET.read_bytes()
+        manifest_json = _MANIFEST.read_text()
+    except OSError as exc:
+        logger.warning("genblaze fixtures unavailable: %s", exc)
+        return GenblazeReconcileResponse(
+            asset_sha256="",
+            genblaze=_unavailable_integrity(),
+            rooted=RootedClaim(
+                manifest_id=_MANIFEST_ID,
+                asset_sha256="",
+                system_provenance=_PROVENANCE,
+                signature_valid=False,
+                public_key_hex=sbr._public_key_hex(),
+            ),
+            reconciled=False,
+        )
     sha = hashlib.sha256(data).hexdigest()
-    integrity = _genblaze_integrity(_MANIFEST.read_text())
+    integrity = _genblaze_integrity(manifest_json)
 
     rooted = Manifest(
         manifest_id=_MANIFEST_ID,

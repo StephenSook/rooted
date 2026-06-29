@@ -35,7 +35,8 @@ def _env() -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        env[k.strip()] = v.split("#")[0].strip().strip('"').strip("'")
+        # Strip only a " #" inline comment so a value containing '#' (e.g. a password) is preserved.
+        env[k.strip()] = v.split(" #", 1)[0].strip().strip('"').strip("'")
     return env
 
 

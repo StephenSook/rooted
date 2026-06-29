@@ -52,7 +52,8 @@ export function GenblazePanel() {
       <p className="mb-3 text-[11px] text-white/55">
         One asset, two trust layers. A real Genblaze generation was written to Backblaze B2 by
         Genblaze&apos;s own storage sink; Genblaze proves integrity (its Mode 1), and Rooted adds an
-        Ed25519/COSE signature, the C2PA mapping, recovery, and a transparency proof.
+        Ed25519/COSE signature and a C2PA claim over the same bytes (recovery and the transparency
+        log are demonstrated in the panels above).
       </p>
 
       {error && <p className="font-mono text-sm text-amber-400">Backend unreachable.</p>}

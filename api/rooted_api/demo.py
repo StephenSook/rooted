@@ -87,6 +87,22 @@ def audio_demo_bytes() -> bytes:
     return _audio_bytes
 
 
+# The demo SPEECH asset: a real ElevenLabs (kie.ai) clip narrating the provenance concept, bundled
+# here. Unlike the instrumental demo audio, this is SPEECH, so Genblaze's AssemblyAI STT connector
+# can transcribe it to a hash-verified transcript (see make_genblaze_transcript_sample.py).
+_SPEECH_ASSET_PATH = Path(__file__).parent / "assets" / "demo-speech.mp3"
+_speech_bytes: bytes | None = None
+
+
+def speech_demo_bytes() -> bytes:
+    """The demo speech asset's exact bytes (a real ElevenLabs clip, kie.ai). Cached on first read.
+    These bytes are what /demo/speech serves; AssemblyAI fetches that URL to transcribe it."""
+    global _speech_bytes
+    if _speech_bytes is None:
+        _speech_bytes = _SPEECH_ASSET_PATH.read_bytes()
+    return _speech_bytes
+
+
 # The demo VIDEO asset: a real Veo3 clip (kie.ai), trimmed to ~6s and bundled here. Recovery is by
 # per-keyframe PDQ (rooted_provenance.video), the video analog of the image fingerprint.
 _VIDEO_ASSET_PATH = Path(__file__).parent / "assets" / "demo-video.mp4"
@@ -432,6 +448,13 @@ async def demo_sample() -> Response:
 async def demo_audio() -> Response:
     """Serve the demo audio bytes so the UI can play it and recover it. No provenance data."""
     return Response(content=audio_demo_bytes(), media_type="audio/mpeg")
+
+
+@router.get("/demo/speech", include_in_schema=False)
+async def demo_speech() -> Response:
+    """Serve the demo speech bytes (a real ElevenLabs clip) over public https so Genblaze's
+    AssemblyAI STT connector can fetch and transcribe it. No provenance data; safe unauthed."""
+    return Response(content=speech_demo_bytes(), media_type="audio/mpeg")
 
 
 @router.get("/demo/video", include_in_schema=False)

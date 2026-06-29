@@ -10,7 +10,13 @@ from httpx import ASGITransport
 from PIL import Image
 
 from rooted_api import sbr
-from rooted_api.demo import DEMO_ENTRY_COUNT, DEMO_MANIFEST_ID, demo_sample_bytes, seed_demo
+from rooted_api.demo import (
+    DEMO_ENTRY_COUNT,
+    DEMO_MANIFEST_ID,
+    demo_sample_bytes,
+    seed_demo,
+    speech_demo_bytes,
+)
 from rooted_api.main import app
 from rooted_provenance.merkle import TransparencyLog
 from rooted_provenance.resolver import InMemoryIndex, Resolver
@@ -96,6 +102,17 @@ async def test_log_and_proof_leaf_index_agree() -> None:
     finally:
         sbr.set_resolver(None)
         sbr.set_log(None)
+
+
+async def test_demo_speech_route_serves_the_clip() -> None:
+    # The speech asset is the input Genblaze's AssemblyAI STT connector transcribes. It must be
+    # served over public https as audio so the connector (and the UI) can fetch it.
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/demo/speech")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/mpeg"
+    assert r.content == speech_demo_bytes()
+    assert len(r.content) > 1000  # a real clip, not an empty body
 
 
 async def test_demo_sample_route_then_recover() -> None:

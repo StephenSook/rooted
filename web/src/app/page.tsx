@@ -3,6 +3,7 @@ import { AudioPanel } from "@/components/audio-panel";
 import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
 import { ContentCredentials } from "@/components/content-credentials";
+import { GenblazePanel } from "@/components/genblaze-panel";
 import { GeneratePanel } from "@/components/generate-panel";
 import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
@@ -47,6 +48,8 @@ export default function Home() {
       <TamperPanel />
 
       <StoragePanel />
+
+      <GenblazePanel />
 
       <LineagePanel />
 

@@ -40,10 +40,18 @@ from rooted_provenance.models import (
     SoftBinding,
     canonical_json,
 )
-from rooted_provenance.resolver import Resolver
+from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.signing import sign_manifest
 from rooted_provenance.video import video_frames
-from rooted_storage.storage import Storage, asset_key, manifest_key, signature_key
+from rooted_provenance.watermark import FakeWatermarker
+from rooted_storage.storage import (
+    MANIFEST_PREFIX,
+    B2Storage,
+    Storage,
+    asset_key,
+    manifest_key,
+    signature_key,
+)
 
 DEMO_MANIFEST_ID = "urn:c2pa:demo-0000-0000-0000-000000000001"
 DEMO_WATERMARK_ID = "DEMO"
@@ -593,3 +601,121 @@ async def demo_robustness() -> RobustnessGrid:
     from rooted_api import sbr
 
     return await run_in_threadpool(_compute_robustness, sbr.get_resolver())
+
+
+class RebuildResult(CamelModel):
+    """The recovery index rebuilt from Backblaze B2 alone. Rooted's resolver and transparency log
+    are derived state; the authoritative record is the content-addressed objects in B2. This walks
+    the
+    manifests stored in B2, re-fetches each asset, re-fingerprints it into a FRESH resolver and log,
+    then re-proves the demo asset recovers, so a lost database can be fully reconstituted from B2.
+    Read-only: it builds a throwaway index and never touches the live one. roots_match is usually
+    false because a transparency log is append-ordered while B2 is a content-addressed store with no
+    order, and the live log also carries runtime leaves (for example event-ingested) whose manifests
+    are not stored under the manifest prefix; the load-bearing claim is that the recovery index and
+    the demo recovery rebuild from B2."""
+
+    available: bool
+    backend: str
+    manifests_scanned: int
+    manifests_rebuilt: int
+    skipped: int
+    leaves_rebuilt: int
+    demo_recovered: bool
+    demo_similarity: int | None
+    rebuilt_tree_size: int
+    rebuilt_root_hash: str
+    live_tree_size: int
+    live_root_hash: str
+    roots_match: bool
+    note: str
+
+
+_REBUILD_MANIFEST_CAP = 100
+
+
+def _compute_rebuild(storage: Storage, live_log: TransparencyLog) -> RebuildResult:
+    """Reconstruct a fresh resolver + log from the manifests/assets stored in B2, then recover the
+    demo asset against the rebuilt index. Bounded to _REBUILD_MANIFEST_CAP manifests."""
+    backend = "backblaze-b2" if isinstance(storage, B2Storage) else "in-memory"
+    keys = storage.list_keys(f"{MANIFEST_PREFIX}/")[:_REBUILD_MANIFEST_CAP]
+    fresh = Resolver(InMemoryIndex(), FakeWatermarker())
+    fresh_log = TransparencyLog()
+    rebuilt = 0
+    skipped = 0
+    for mk in keys:
+        try:
+            manifest = Manifest.model_validate_json(storage.get(mk))
+            akey = asset_key(manifest.asset_sha256)
+            if not storage.exists(akey):
+                skipped += 1
+                continue
+            image = Image.open(io.BytesIO(storage.get(akey))).convert("RGB")
+        except Exception:  # noqa: BLE001 - a non-image asset (audio/video) or a bad object is skipped
+            skipped += 1
+            continue
+        watermark = manifest.soft_bindings[0].value if manifest.soft_bindings else ""
+        fresh.register(manifest, image, watermark)
+        fresh_log.append(manifest.manifest_id, manifest.canonical_hash())
+        rebuilt += 1
+
+    demo_img = Image.open(io.BytesIO(demo_sample_bytes())).convert("RGB")
+    result = fresh.resolve_by_content(demo_img)
+    match = result.matches[0] if result.matches else None
+    demo_recovered = match is not None and match.manifest_id == DEMO_MANIFEST_ID
+
+    rebuilt_root = fresh_log.root().hex() if fresh_log.size else ""
+    live_root = live_log.root().hex() if live_log.size else ""
+    note = (
+        f"Rebuilt {rebuilt} image manifests from B2 content-addressed objects with no database; "
+        "the demo asset recovers against the rebuilt index."
+        if demo_recovered
+        else "Rebuilt from B2; the demo asset did not recover against the rebuilt index."
+    )
+    return RebuildResult(
+        available=True,
+        backend=backend,
+        manifests_scanned=len(keys),
+        manifests_rebuilt=rebuilt,
+        skipped=skipped,
+        leaves_rebuilt=fresh_log.size,
+        demo_recovered=demo_recovered,
+        demo_similarity=match.similarity_score if match else None,
+        rebuilt_tree_size=fresh_log.size,
+        rebuilt_root_hash=rebuilt_root,
+        live_tree_size=live_log.size,
+        live_root_hash=live_root,
+        roots_match=(rebuilt_root == live_root and fresh_log.size == live_log.size),
+        note=note,
+    )
+
+
+@router.get("/demo/rebuild", response_model=RebuildResult, include_in_schema=False)
+async def demo_rebuild() -> RebuildResult:
+    """Nuke-and-rebuild: reconstruct the recovery index from Backblaze B2 alone, then re-prove the
+    demo asset recovers. Proves B2 is the source of truth, not the database. Read-only (a throwaway
+    index, the live one is untouched); computed off the event loop."""
+    from rooted_api import sbr
+
+    storage = sbr.get_storage()
+    if storage is None:
+        return RebuildResult(
+            available=False,
+            backend="none",
+            manifests_scanned=0,
+            manifests_rebuilt=0,
+            skipped=0,
+            leaves_rebuilt=0,
+            demo_recovered=False,
+            demo_similarity=None,
+            rebuilt_tree_size=0,
+            rebuilt_root_hash="",
+            live_tree_size=0,
+            live_root_hash="",
+            roots_match=False,
+            note=(
+                "No storage backend configured; rebuild requires Backblaze B2 "
+                "(or the in-memory store in tests)."
+            ),
+        )
+    return await run_in_threadpool(_compute_rebuild, storage, sbr.get_log())

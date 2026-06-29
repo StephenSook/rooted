@@ -69,6 +69,7 @@ class Storage(Protocol):
     def exists(self, key: str) -> bool: ...
     def delete(self, key: str) -> None: ...
     def retention(self, key: str) -> RetentionInfo | None: ...
+    def list_keys(self, prefix: str) -> list[str]: ...
 
 
 class InMemoryStorage:
@@ -110,6 +111,9 @@ class InMemoryStorage:
         if key not in self._data:
             return None
         return self._retention.get(key, RetentionInfo(mode="none", retain_until_ms=None))
+
+    def list_keys(self, prefix: str) -> list[str]:
+        return sorted(k for k in self._data if k.startswith(prefix))
 
 
 class B2Storage:
@@ -169,3 +173,15 @@ class B2Storage:
         except FileNotPresent:
             return None
         return _parse_retention(getattr(info, "file_retention", None))
+
+    def list_keys(self, prefix: str) -> list[str]:
+        """List the object keys under a prefix (B2 has a flat namespace; "/" is a folder
+        convention). Used to reconstruct the recovery index from B2 alone, so B2 is the source of
+        truth, not the database. Recursive, so a sharded prefix (assets/..) is fully walked."""
+        return [
+            fv.file_name
+            for fv, _ in self._bucket.ls(
+                folder_to_list=prefix.rstrip("/"), recursive=True, latest_only=True
+            )
+            if fv.file_name.startswith(prefix)
+        ]

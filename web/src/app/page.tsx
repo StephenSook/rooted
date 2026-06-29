@@ -9,6 +9,7 @@ import { GenblazePanel } from "@/components/genblaze-panel";
 import { GeneratePanel } from "@/components/generate-panel";
 import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
+import { RebuildPanel } from "@/components/rebuild-panel";
 import { RecoverPanel } from "@/components/recover-panel";
 import { RobustnessPanel } from "@/components/robustness-panel";
 import { StatusPanel } from "@/components/status-panel";
@@ -56,6 +57,8 @@ export default function Home() {
       <StoragePanel />
 
       <B2EventsPanel />
+
+      <RebuildPanel />
 
       <GenblazePanel />
 

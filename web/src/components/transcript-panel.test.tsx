@@ -57,7 +57,7 @@ describe("TranscriptPanel", () => {
     mockFetch(SAMPLE);
     render(<TranscriptPanel />);
     expect(
-      await screen.findByText(/reconciled — same transcript, both layers verify/),
+      await screen.findByText(/reconciled: same transcript, both layers verify/),
     ).toBeTruthy();
     expect(screen.getByText(/verifiable content provenance/)).toBeTruthy();
     expect(screen.getByText(/Genblaze · transcript integrity/)).toBeTruthy();

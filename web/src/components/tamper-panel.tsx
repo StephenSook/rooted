@@ -146,7 +146,7 @@ export function TamperPanel() {
           {status === "tampered" && (
             <div className="rounded-lg border border-rose-400/30 bg-rose-500/[0.06] p-3">
               <p className="font-mono text-xs text-rose-400">
-                ✗ TAMPERED — the signature does not cover this manifest
+                ✗ TAMPERED: the signature does not cover this manifest
               </p>
               <p className="mt-1 text-[11px] text-white/55">
                 Authentic manifest recovered from the {source}. Changed field

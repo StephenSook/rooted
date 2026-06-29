@@ -28,7 +28,7 @@ durable, vendor-neutral repository it recovers from, and that repository is B2.
 | Web | <https://rooted-web-phi.vercel.app> |
 | SBR API | <https://rooted-api-ubvc.onrender.com> |
 | MCP server | `https://rooted-api-ubvc.onrender.com/mcp` (judge-connectable over HTTP) |
-| CLI | `pip install` the `cli/` package, then `rooted recover stripped.jpg` |
+| CLI | `pip install ./cli`, then `rooted recover stripped.jpg` |
 | Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
 
 Open the site and click **recover the demo asset**: a real AI-generated image (created with Genblaze
@@ -123,16 +123,16 @@ suite, never from draft prose.
 | Merkle transparency log + signed checkpoints, sealed to a B2 Object Lock (WORM) bucket, read back + verified | wired + live |
 | Postgres + pgvector HNSW `bit(256)` recovery index, selected by `DATABASE_URL` | wired + live (`recoveryIndex: postgres+hnsw`) |
 | Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation |
-| Genblaze AssemblyAI speech-to-text: a real speech clip to a hash-verified transcript, reconciled with Rooted's signature, stored on B2 | wired + live |
-| Genblaze writes its own run to B2 via its `ObjectStorageSink`, reconciled with Rooted's signature | wired + live |
+| Genblaze AssemblyAI speech-to-text: a real speech clip to a hash-verified transcript, reconciled live with Rooted's signature (the run was persisted to B2; its object keys are recorded) | wired + live |
+| Genblaze wrote its own run to B2 via its `ObjectStorageSink` (a prior run); the endpoint reconciles the integrity hash + Rooted's signature live | wired + live |
 | Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), vendor-neutral | wired + live |
 | TrustMark variant P watermark (opt-in via `ROOTED_REAL_WATERMARK`) + PDQ fallback | wired + verified |
 | Audio + video modalities (spectral audio fingerprint, per-keyframe video PDQ) | wired + live |
 | Green C2PA "Trusted" via the conformance test trust list (labeled FOR TESTING ONLY) | wired + live |
 | C2PA ingredient-DAG lineage + a 3D graph; tamper-diff forensics (which signed field changed vs the registry) | wired + live |
 | Side-by-side vs the official C2PA reader (No Content Credentials vs RECOVERED on the same bytes) | wired + live |
-| FastMCP product server (judge-connectable over HTTP) + a live Claude provenance agent | wired + live |
-| Published `rooted` SBR CLI | wired + live |
+| FastMCP product server (judge-connectable over HTTP); a Claude provenance agent, opt-in when `ANTHROPIC_API_KEY` is set | wired + live |
+| Packaged `rooted` SBR CLI (`pip install ./cli`) | wired + live |
 | Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
 | B2 Event-Notification ingest (B2 upload to a signed webhook to auto-ingest to recoverable) | wired; pending account-level Event Notifications enablement |
 
@@ -144,13 +144,13 @@ suite, never from draft prose.
   the transparency routes, and the B2 event-ingest webhook.
 - **MCP server** (`/mcp` and mounted at `/mcp` on the API): three curated tools so an AI agent can
   verify provenance, recover manifests, and query the transparency log conversationally.
-- **CLI** (`/cli`): the published `rooted` command (`recover`, `status`, `manifest`, `proof`,
-  `algorithms`) wrapping the public SBR API.
+- **CLI** (`/cli`): the `rooted` command (`recover`, `status`, `manifest`, `proof`, `algorithms`)
+  wrapping the public SBR API; install with `pip install ./cli`.
 - **Browser extension** (`/extension`): a Manifest V3 extension that recovers provenance for any image
   on the web from a right-click.
 - **B2 event ingest**: a Backblaze B2 Event Notification rule posts a signed webhook when an object
   lands under a watched prefix; Rooted verifies the HMAC, fetches the object, and registers it for
-  recovery. Drop an asset in B2 and it auto-becomes recoverable.
+  recovery. Once the rule is enabled, dropping an asset in B2 makes it auto-recoverable.
 
 ## SBR API
 
@@ -180,7 +180,7 @@ Real C2PA v2.4 Soft Binding Resolution routes, contract-tested with schemathesis
 /api          FastAPI SBR API (C2PA v2.4 routes), signing, SB 942 redaction, transparency, B2 event webhook
 /worker       the generate -> watermark -> store -> sign -> index -> log ingest pipeline + Genblaze generator
 /mcp          Rooted's own MCP server (FastMCP): verify_asset, recover_manifest, query_transparency_log
-/cli          the published `rooted` SBR CLI (rooted-sbr)
+/cli          the `rooted` SBR CLI (rooted-sbr)
 /extension    Manifest V3 browser extension: right-click any image to recover its provenance
 /packages
   /provenance trust core: models + canonical hashing, Ed25519/COSE, c2pa-python claim, PDQ, Merkle log

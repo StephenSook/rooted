@@ -3,7 +3,7 @@
 Wraps the public Rooted Soft Binding Resolution API (the same spec endpoints the web client and the
 MCP server use). Defaults to the live deploy; override with --api-url or the ROOTED_API_URL env var.
 
-    pip install rooted-sbr
+    pip install ./cli
     rooted recover stripped.jpg
 """
 

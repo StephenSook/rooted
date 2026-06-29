@@ -54,7 +54,7 @@ Monorepo: Turborepo for the JS side, uv workspaces for the Python side.
 ```
 /web          Next.js 15 App Router front end (React 19, TypeScript, Tailwind v4, shadcn/ui)
 /api          FastAPI backend: the SBR API endpoints, signing, redaction
-/worker       Dramatiq actors: the generate -> watermark -> fingerprint -> sign -> log pipeline
+/worker       the generate -> watermark -> fingerprint -> sign -> log pipeline + Genblaze generator (the live ingest runs in-process in /api)
 /packages
   /provenance c2pa-python, TrustMark, PDQ, Ed25519/COSE, Merkle-log logic (the trust core)
   /storage    Backblaze B2 access (b2sdk) and the Genblaze sink wiring
@@ -70,8 +70,9 @@ Monorepo: Turborepo for the JS side, uv workspaces for the Python side.
 
 Verify every version via Context7 before generating code; the numbers below are the intended targets.
 
-- Python 3.11-3.13, uv workspace. FastAPI 0.135+, Pydantic v2, SQLModel, Alembic, asyncpg, Uvicorn,
-  Dramatiq[redis] + Redis, sse-starlette.
+- Python 3.11-3.13, uv workspace. FastAPI 0.135+, Pydantic v2, Uvicorn, sse-starlette. Generation
+  runs in-process in the API (no task queue). No ORM/migrations: the Postgres index uses sync psycopg
+  + psycopg-pool with raw SQL (native `bit(256)` + `bit_count`).
 - Storage and provenance: b2sdk, c2pa-python 0.32.x, trustmark (variant P), pdqhash, cryptography
   (Ed25519), pycose (COSE_Sign1), pymerkle.
 - Database: Postgres 16 + pgvector 0.8.1 (minimum 0.7.0 for the `bit` type and `bit_hamming_ops`).
@@ -88,8 +89,7 @@ Python services use `uv`. The JS front end uses `pnpm` (locked).
 
 Backend / worker / packages (from repo root or the relevant service dir):
 - Install: `uv sync --locked --all-extras --dev`
-- Run the API: `uv run fastapi dev api/main.py`
-- Run the worker: `uv run dramatiq worker.main`
+- Run the API: `uv run fastapi dev api/main.py` (the ingest pipeline runs in-process)
 - Lint: `uv run ruff check .`  Format: `uv run ruff format .` (CI: `uv run ruff format --check .`)
 - Type-check: `uv run mypy .` (and/or `uv run ty check` for fast local feedback)
 - Test: `uv run pytest`
@@ -163,8 +163,9 @@ platform tokens (Vercel, Render, Modal). These are expected, not extra dependenc
 - TypeScript: end-to-end type safety against the FastAPI backend via generated clients
   (openapi-typescript + openapi-fetch + TanStack Query). Regenerate types whenever the API changes;
   never hand-write API response types the schema can produce.
-- Python: FastAPI + Pydantic v2, async-first. SQLModel for models, Alembic for migrations, asyncpg as
-  the driver. Validate everything at the boundary.
+- Python: FastAPI + Pydantic v2, async-first. The Postgres index uses sync psycopg + psycopg-pool with
+  raw SQL (no ORM, no migrations); blocking calls are offloaded via run_in_threadpool. Validate
+  everything at the boundary.
 - Perceptual-hash search: store PDQ hashes as `bit(256)` in Postgres, index with an HNSW
   `bit_hamming_ops` index (pgvector 0.7+), query by Hamming distance (threshold 31). Watermark-ID
   lookups are exact-match (a plain B-tree index), not nearest-neighbor. PDQ is an internal index

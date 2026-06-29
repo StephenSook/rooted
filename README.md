@@ -108,7 +108,7 @@ flowchart TB
     RES --> PG
     SIGN --> B2
     LOG --> B2
-    B2 -. "event notification webhook" .-> API
+    B2 -. "event webhook (pending Backblaze tier)" .-> API
 ```
 
 ## What is real (capability honesty)

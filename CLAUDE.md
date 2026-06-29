@@ -102,7 +102,7 @@ Front end (from `/web`):
   (openapi-typescript + openapi-fetch against `/openapi.json`)
 
 Local full stack:
-- `docker compose up` brings up Postgres (pgvector/pgvector:pg16), Redis, the API, and a worker.
+- `docker compose up` brings up Postgres (pgvector/pgvector:pg16) for local Postgres-backed runs.
 
 Always run lint, type-check, and tests before considering a change done. Never commit a change that
 leaves `uv.lock` stale (CI runs `uv sync --locked` and will fail).
@@ -139,7 +139,7 @@ Prefer these for deploys, logs, and secrets over manual steps.
 
 - Front end: Vercel. Typed from the backend `/openapi.json`; `/api/*` proxied via `next.config.js`
   rewrites (or CORS enabled for the Vercel origin).
-- API + Postgres + Redis: Render, paid always-on instance to avoid cold starts on stage.
+- API + Postgres: Render, paid always-on instance to avoid cold starts on stage.
 - GPU / slow tail (TrustMark encode): Modal serverless, weights pre-baked into the image.
 - B2 buckets: a dev bucket with no Object Lock retention for iteration, and a separate locked bucket
   (compliance retention) for the final verified run and the demo only. Object Lock writes are

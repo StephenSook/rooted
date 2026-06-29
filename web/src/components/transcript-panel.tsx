@@ -27,6 +27,7 @@ type Reconcile = {
     outputAssetSha256: string | null;
     generator: string;
     storedOnB2: boolean;
+    b2Keys: string[];
   };
   rooted: {
     manifestId: string;
@@ -115,7 +116,14 @@ export function TranscriptPanel() {
                 <Row k="words" v={`${d.wordCount} · ${d.language ?? "—"} · ${d.audioDuration ?? "—"}s`} />
                 <Row k="canonical hash" v={short(d.genblaze.canonicalHash)} />
                 <Row k="output sha256" v={short(d.genblaze.outputAssetSha256)} />
-                <Row k="stored on B2" v={d.genblaze.storedOnB2 ? "✓ via S3 backend" : "no"} />
+                <Row
+                  k="stored on B2"
+                  v={
+                    d.genblaze.storedOnB2
+                      ? `✓ ${short(d.genblaze.b2Keys?.[0] ?? "via S3 backend", 22)}`
+                      : "no"
+                  }
+                />
               </dl>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">

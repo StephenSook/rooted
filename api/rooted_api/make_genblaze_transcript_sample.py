@@ -20,6 +20,7 @@ Run (needs ASSEMBLYAI_API_KEY + B2 creds in .env; the speech route must be deplo
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from genblaze_core import Modality, Pipeline
@@ -90,12 +91,13 @@ def main() -> None:
     b2_keys: dict[str, str] = {}
     try:
         prefix = f"genblaze-transcripts/{run.run_id}"
-        b2_keys["manifest"] = backend.put(
-            f"{prefix}/manifest.json", manifest_json.encode(), content_type="application/json"
-        )
-        b2_keys["transcript"] = backend.put(
-            f"{prefix}/transcript.txt", text.encode(), content_type="text/plain"
-        )
+        manifest_key = f"{prefix}/manifest.json"
+        transcript_key = f"{prefix}/transcript.txt"
+        backend.put(manifest_key, manifest_json.encode(), content_type="application/json")
+        backend.put(transcript_key, text.encode(), content_type="text/plain")
+        b2_keys = {"manifestKey": manifest_key, "transcriptKey": transcript_key}
+        # Record the keys so /demo/transcript can derive stored_on_b2 from evidence, not a hardcode.
+        (_ASSETS / "genblaze-transcript-b2.json").write_text(json.dumps(b2_keys, indent=2))
     except Exception as exc:  # noqa: BLE001 - fixtures are saved; B2 is a best-effort axis here
         print("WARN: B2 write failed (fixtures still committed):", exc)
     finally:

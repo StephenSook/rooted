@@ -33,6 +33,10 @@ const SAMPLE = {
     outputAssetSha256: "a699e1329ddb5488",
     generator: "genblaze",
     storedOnB2: true,
+    b2Keys: [
+      "genblaze-transcripts/dfd1013f/manifest.json",
+      "genblaze-transcripts/dfd1013f/transcript.txt",
+    ],
   },
   rooted: {
     manifestId: "urn:c2pa:genblaze-transcript-0000-0000-0000-000000000001",

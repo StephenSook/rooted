@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import os
 import time
 
@@ -25,6 +26,7 @@ from rooted_provenance.models import ALG_TRUSTMARK_P, CamelModel
 from rooted_storage.storage import B2Storage, asset_key
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class TransparencyStatus(CamelModel):
@@ -76,7 +78,8 @@ def _storage_status() -> StorageStatus:
     sha = hashlib.sha256(demo_sample_bytes()).hexdigest()
     try:
         present = storage.exists(asset_key(sha))
-    except Exception:  # noqa: BLE001 - a storage probe must not fail the status page
+    except Exception as exc:  # noqa: BLE001 - a storage probe must not fail the status page
+        logger.warning("status storage probe failed: %s", exc)
         present = False
     return StorageStatus(
         backend="backblaze-b2" if is_b2 else "in-memory", bucket=bucket, demo_asset_present=present
@@ -91,7 +94,8 @@ def _recovery_self_test() -> RecoverySelfTest:
         start = time.perf_counter()
         result = sbr.get_resolver().resolve_by_content(image)
         latency_ms = round((time.perf_counter() - start) * 1000)
-    except Exception:  # noqa: BLE001 - the self-test is best-effort and never breaks the page
+    except Exception as exc:  # noqa: BLE001 - the self-test is best-effort and never breaks the page
+        logger.warning("status recovery self-test failed: %s", exc)
         return RecoverySelfTest(
             recovered=False, manifest_id=None, similarity_score=None, latency_ms=0
         )

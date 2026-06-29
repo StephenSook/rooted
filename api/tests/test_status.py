@@ -79,3 +79,26 @@ def test_status_recovery_self_test_recovers_the_seed(client: TestClient) -> None
     assert st["manifestId"] == demo.DEMO_MANIFEST_ID
     assert st["similarityScore"] == 100
     assert st["latencyMs"] >= 0
+
+
+def test_storage_probe_failure_is_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # A real B2 outage/auth error during the status storage probe must be logged (visible in the
+    # Render logs), not silently surfaced as a benign demoAssetPresent=false on the judges page.
+    from rooted_storage.storage import InMemoryStorage
+
+    storage = InMemoryStorage()
+
+    def _boom(_key: str) -> bool:
+        raise RuntimeError("b2 down")
+
+    monkeypatch.setattr(storage, "exists", _boom)
+    sbr.set_storage(storage)
+    try:
+        with caplog.at_level("WARNING"):
+            result = status._storage_status()
+        assert result.demo_asset_present is False
+        assert any("storage probe failed" in r.message for r in caplog.records)
+    finally:
+        sbr.set_storage(None)

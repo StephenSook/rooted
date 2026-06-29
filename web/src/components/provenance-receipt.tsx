@@ -104,7 +104,7 @@ export function ProvenanceReceipt({ manifestId }: { manifestId: string }) {
             className={`mb-3 font-mono text-sm ${p?.serverVerified ? "text-emerald-300" : "text-white/60"}`}
           >
             {p?.serverVerified
-              ? "✓ VERIFIED — included in the signed transparency log"
+              ? "✓ VERIFIED, included in the signed transparency log"
               : "recovered (proof pending)"}
           </p>
 

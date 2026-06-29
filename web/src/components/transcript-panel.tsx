@@ -84,7 +84,7 @@ export function TranscriptPanel() {
           </audio>
 
           <blockquote className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm leading-relaxed text-white/80">
-            “{d.transcript}”
+            {d.transcript}
           </blockquote>
 
           <div className="mb-3 flex flex-wrap gap-1.5">
@@ -92,7 +92,7 @@ export function TranscriptPanel() {
               <span
                 key={i}
                 className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-white/70"
-                title={`${w.start.toFixed(2)}–${w.end.toFixed(2)}s`}
+                title={`${w.start.toFixed(2)}-${w.end.toFixed(2)}s`}
               >
                 {w.word}{" "}
                 <span className="text-white/40">{w.start.toFixed(1)}s</span>

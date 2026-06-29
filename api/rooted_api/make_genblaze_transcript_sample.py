@@ -23,7 +23,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from genblaze_core import Modality, Pipeline
-from genblaze_core.storage.sink import ObjectStorageSink
 from genblaze_s3 import S3StorageBackend
 
 # Rooted's own real AI speech asset, served over public https so AssemblyAI can fetch it (the
@@ -50,6 +49,15 @@ def main() -> None:
     from genblaze_assemblyai import AssemblyAIProvider
 
     env = _env()
+    # Construct (and preflight) the B2 backend BEFORE the paid transcription, so a bad B2 config
+    # fails fast instead of after spending the AssemblyAI STT call.
+    backend = S3StorageBackend.for_backblaze(
+        bucket=env["B2_BUCKET_DEV"],
+        region="us-east-005",
+        key_id=env["B2_KEY_ID"],
+        app_key=env["B2_APP_KEY"],
+    )
+
     run, manifest = (
         Pipeline("rooted-genblaze-transcript")
         .step(
@@ -69,19 +77,29 @@ def main() -> None:
     assert text, "transcript text is empty (is the audio actually speech?)"
     assert word_timings, "word_timings is empty"
 
-    # Write the run to B2 via Genblaze's OWN ObjectStorageSink (the dual-axis: Genblaze persists its
-    # transcript asset + manifest to Backblaze through its native S3 backend).
-    backend = S3StorageBackend.for_backblaze(
-        bucket=env["B2_BUCKET_DEV"],
-        region="us-east-005",
-        key_id=env["B2_KEY_ID"],
-        app_key=env["B2_APP_KEY"],
-    )
-    ObjectStorageSink(backend).write_run(run, manifest)
-
+    # Commit the fixtures FIRST so a B2 hiccup can never discard the paid transcription. These are
+    # exactly what /demo/transcript reads at runtime.
     _ASSETS.mkdir(exist_ok=True)
-    (_ASSETS / "genblaze-transcript-manifest.json").write_text(manifest.model_dump_json(indent=2))
+    manifest_json = manifest.model_dump_json(indent=2)
+    (_ASSETS / "genblaze-transcript-manifest.json").write_text(manifest_json)
     (_ASSETS / "genblaze-transcript.txt").write_text(text)
+
+    # Persist the transcript to Backblaze B2 via Genblaze's own S3 backend (the B2 axis). The
+    # transcript asset is inline (text://), which the URL-transfer sink cannot move, so write the
+    # manifest + transcript bytes directly via backend.put (the fixtures are already saved).
+    b2_keys: dict[str, str] = {}
+    try:
+        prefix = f"genblaze-transcripts/{run.run_id}"
+        b2_keys["manifest"] = backend.put(
+            f"{prefix}/manifest.json", manifest_json.encode(), content_type="application/json"
+        )
+        b2_keys["transcript"] = backend.put(
+            f"{prefix}/transcript.txt", text.encode(), content_type="text/plain"
+        )
+    except Exception as exc:  # noqa: BLE001 - fixtures are saved; B2 is a best-effort axis here
+        print("WARN: B2 write failed (fixtures still committed):", exc)
+    finally:
+        backend.close()
 
     first6 = [(w.word, round(w.start, 2), round(w.end, 2)) for w in word_timings[:6]]
     print("OK")
@@ -92,6 +110,7 @@ def main() -> None:
     print("canonical_hash:", manifest.canonical_hash)
     print("run_id:", run.run_id)
     print("verify_hash:", manifest.verify_hash())
+    print("b2 keys:", b2_keys)
 
 
 if __name__ == "__main__":

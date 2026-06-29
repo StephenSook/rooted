@@ -48,6 +48,12 @@ class SoftBinding(CamelModel):
     scope: str = "all"
 
 
+# Personal-provenance keys that can appear in system_provenance on a legacy/WORM-locked manifest
+# (e.g. a prompt). The disclosure layer (Manifest.redacted) withholds them; the full signed manifest
+# stays the verifiable artifact, anchored in the transparency log and the Object-Lock checkpoint.
+_PERSONAL_SYSTEM_KEYS = frozenset({"prompt"})
+
+
 class Manifest(CamelModel):
     """The provenance record Rooted stores and recovers.
 
@@ -66,9 +72,10 @@ class Manifest(CamelModel):
     def canonical_payload(self) -> dict[str, Any]:
         """The fields that are bound by the canonical hash and the signature.
 
-        personal_provenance is EXCLUDED so a redacted manifest still verifies against the same
-        hash (the redaction removes nothing that was hashed). soft_bindings are excluded too: they
-        are recovery pointers maintained alongside the manifest, not part of its identity.
+        personal_provenance is EXCLUDED, so clearing it (the common redaction) does not change the
+        hash. soft_bindings are excluded too: they are recovery pointers maintained alongside the
+        manifest, not part of its identity. The verifiable artifact is the FULL signed manifest; the
+        /manifests disclosure view may additionally withhold personal keys (see redacted()).
         """
         return {
             "manifest_id": self.manifest_id,
@@ -81,8 +88,13 @@ class Manifest(CamelModel):
         return sha256_hex(canonical_json(self.canonical_payload()))
 
     def redacted(self) -> Manifest:
-        """SB 942 split: emit system provenance, withhold personal provenance."""
-        return self.model_copy(update={"personal_provenance": {}})
+        """The SB 942 disclosure view: emit system provenance, withhold personal provenance. Clears
+        personal_provenance AND strips any personal key (e.g. a prompt) that appears in
+        system_provenance on a legacy manifest. This is a read-time privacy transform on the
+        DISCLOSURE only: the full signed manifest is unchanged and stays the verifiable artifact,
+        anchored in the transparency log and the Object-Lock checkpoint."""
+        system = {k: v for k, v in self.system_provenance.items() if k not in _PERSONAL_SYSTEM_KEYS}
+        return self.model_copy(update={"personal_provenance": {}, "system_provenance": system})
 
 
 class Match(CamelModel):

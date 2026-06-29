@@ -70,6 +70,31 @@ async def test_unknown_manifest_404() -> None:
     assert r.status_code == 404
 
 
+async def test_get_manifest_withholds_a_prompt_left_in_system_provenance() -> None:
+    # A legacy/WORM-locked manifest carries the prompt in SYSTEM provenance (its signed hash is
+    # sealed, so the manifest cannot change). The read route must still withhold the prompt while
+    # disclosing the rest of system provenance. The signed manifest at /demo/signed-manifest is
+    # unaffected (that path serves the full, verifiable record).
+    from rooted_api.sbr import get_resolver
+    from rooted_provenance.models import Manifest
+
+    image = Image.open(io.BytesIO(_png(37))).convert("RGB")
+    manifest = Manifest(
+        manifest_id="urn:c2pa:legacy-prompt",
+        asset_sha256=hashlib.sha256(_png(37)).hexdigest(),
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream", "provider": "gmi", "prompt": "a private prompt"},
+    )
+    get_resolver().register(manifest, image, "RTleg")
+    async with _client() as c:
+        r = await c.get("/manifests/urn:c2pa:legacy-prompt")
+    assert r.status_code == 200
+    body = r.json()
+    assert "prompt" not in body["systemProvenance"]
+    assert body["systemProvenance"] == {"model": "seedream", "provider": "gmi"}
+    assert body["personalProvenance"] == {}
+
+
 async def test_get_manifest_enforces_redaction_of_real_personal_provenance() -> None:
     # The ingest route never sets personal_provenance, so asserting it is empty after ingest is
     # vacuous. Register a manifest that actually carries PII, then prove the read route strips it

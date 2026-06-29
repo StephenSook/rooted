@@ -42,6 +42,27 @@ def test_redaction_drops_personal_but_keeps_hash() -> None:
     assert r.canonical_hash() == m.canonical_hash()
 
 
+def test_redaction_withholds_a_prompt_left_in_system_provenance() -> None:
+    # A legacy/WORM-locked manifest carrying the prompt in SYSTEM provenance. The signed manifest
+    # cannot change (its hash is sealed), so the disclosure view withholds the prompt at read time.
+    m = Manifest(
+        manifest_id="urn:c2pa:22222222-2222-2222-2222-222222222222",
+        asset_sha256="b" * 64,
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream", "provider": "gmi", "prompt": "a secret prompt"},
+    )
+    r = m.redacted()
+    # The disclosure withholds the prompt but keeps the rest of system provenance.
+    assert "prompt" not in r.system_provenance
+    assert r.system_provenance == {"model": "seedream", "provider": "gmi"}
+    # The full signed manifest is unchanged: it still carries the prompt and still hashes the same,
+    # so the transparency leaf, the WORM checkpoint, and /verify are unaffected.
+    assert m.system_provenance["prompt"] == "a secret prompt"
+    assert "prompt" in m.canonical_payload()["system_provenance"]
+    # The disclosure is a read-time view, so its hash differs from the signed manifest. Expected.
+    assert r.canonical_hash() != m.canonical_hash()
+
+
 def test_changing_system_provenance_changes_hash() -> None:
     m = _manifest()
     m2 = m.model_copy(update={"system_provenance": {"model": "flux"}})

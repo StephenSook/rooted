@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 _ASSETS = Path(__file__).parent / "assets"
 _MANIFEST = _ASSETS / "genblaze-transcript-manifest.json"
 _TRANSCRIPT = _ASSETS / "genblaze-transcript.txt"
+# The B2 object keys the builder recorded after persisting the transcript run to Backblaze. Their
+# presence here is the evidence for stored_on_b2 (not a bare hardcoded claim).
+_B2_RECORD = _ASSETS / "genblaze-transcript-b2.json"
 _MANIFEST_ID = "urn:c2pa:genblaze-transcript-0000-0000-0000-000000000001"
 _CREATED_AT = "2026-06-29T00:00:00Z"
 _SOURCE_AUDIO_URL = "/demo/speech"
@@ -62,6 +65,7 @@ class GenblazeTranscriptIntegrity(CamelModel):
     generator: str
     mode: str
     stored_on_b2: bool
+    b2_keys: list[str] = []
 
 
 class RootedTranscriptClaim(CamelModel):
@@ -86,6 +90,17 @@ class TranscriptReconcileResponse(CamelModel):
     reconciled: bool
 
 
+def _b2_object_keys() -> list[str]:
+    """The B2 object keys the builder recorded after persisting the transcript run to Backblaze.
+    Their presence is the evidence for stored_on_b2; empty if the run was not persisted."""
+    try:
+        rec = json.loads(_B2_RECORD.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    keys = [rec.get("manifestKey"), rec.get("transcriptKey")]
+    return [k for k in keys if isinstance(k, str) and k]
+
+
 def _unavailable_integrity() -> GenblazeTranscriptIntegrity:
     return GenblazeTranscriptIntegrity(
         available=False,
@@ -96,7 +111,8 @@ def _unavailable_integrity() -> GenblazeTranscriptIntegrity:
         output_asset_sha256=None,
         generator="genblaze",
         mode="integrity (Mode 1)",
-        stored_on_b2=True,
+        stored_on_b2=False,
+        b2_keys=[],
     )
 
 
@@ -105,15 +121,16 @@ def _integrity(
 ) -> tuple[GenblazeTranscriptIntegrity, list[WordTiming], dict[str, Any]]:
     """Parse + RE-VERIFY the native Genblaze transcript manifest at request time. Returns the
     integrity record, the word timings, and the asset metadata (language, duration). Degrades to
-    available=false rather than 500 if the manifest cannot be parsed."""
-    raw = json.loads(manifest_json)
-    asset = raw["run"]["steps"][0]["assets"][0]
-    timings = [WordTiming(**w) for w in asset.get("audio", {}).get("word_timings", [])]
-    meta = asset.get("metadata", {})
+    available=false (never a 500) on ANY parse/validation failure."""
     try:
         from genblaze_core.models.manifest import parse_manifest
 
+        raw = json.loads(manifest_json)
+        asset = raw["run"]["steps"][0]["assets"][0]
+        timings = [WordTiming(**w) for w in asset.get("audio", {}).get("word_timings", [])]
+        meta = asset.get("metadata", {})
         gm = parse_manifest(raw)
+        b2_keys = _b2_object_keys()
         integrity = GenblazeTranscriptIntegrity(
             available=True,
             schema_version=gm.schema_version,
@@ -123,12 +140,13 @@ def _integrity(
             output_asset_sha256=asset.get("sha256"),
             generator="genblaze",
             mode="integrity (Mode 1)",
-            stored_on_b2=True,
+            stored_on_b2=bool(b2_keys),
+            b2_keys=b2_keys,
         )
         return integrity, timings, meta
     except Exception as exc:  # noqa: BLE001 - a demo surface must degrade, never 500
         logger.warning("genblaze transcript manifest parse/verify failed: %s", exc)
-        return _unavailable_integrity(), timings, meta
+        return _unavailable_integrity(), [], {}
 
 
 @router.get("/demo/transcript", response_model=TranscriptReconcileResponse, include_in_schema=False)

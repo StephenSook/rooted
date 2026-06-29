@@ -15,7 +15,7 @@ import httpx
 import numpy as np
 from httpx import ASGITransport
 from PIL import Image
-from pymerkle import MerkleProof
+from pymerkle import MerkleProof, verify_consistency
 
 from rooted_api.main import app
 from rooted_provenance.merkle import verify_checkpoint
@@ -110,3 +110,58 @@ async def test_inclusion_proof_unknown_manifest_404() -> None:
     async with _client() as c:
         r = await c.get("/transparency/proof/urn:c2pa:absent")
     assert r.status_code == 404
+
+
+async def test_consistency_proof_is_independently_verifiable() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:cons1", "RC01", 21)
+        await _ingest(c, "urn:c2pa:cons2", "RC02", 22)
+        await _ingest(c, "urn:c2pa:cons3", "RC03", 23)
+        body = (await c.get("/transparency/consistency/2")).json()
+    assert body["priorSize"] == 2
+    assert body["treeSize"] >= 3
+    assert body["serverVerified"] is True
+
+    # Independently verify (not via the server's flag): the consistency proof links prior_root to
+    # the current root, and the current root is the signed checkpoint's root.
+    cp = MerkleCheckpoint.model_validate(body["checkpoint"])
+    pub = load_public_key(bytes.fromhex(body["publicKeyHex"]))
+    assert verify_checkpoint(cp, pub) is True
+    assert body["rootHash"] == cp.root_hash
+    proof = MerkleProof.deserialize(body["proof"])
+    # verify_consistency raises InvalidProof if the head is not an append-only extension of prior.
+    verify_consistency(bytes.fromhex(body["priorRootHash"]), bytes.fromhex(body["rootHash"]), proof)
+
+
+async def test_consistency_prior_equal_size_is_trivially_consistent() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:cons_eq", "RC10", 25)
+        size = (await c.get("/transparency/checkpoint")).json()["checkpoint"]["treeSize"]
+        body = (await c.get(f"/transparency/consistency/{size}")).json()
+    assert body["priorSize"] == size
+    assert body["treeSize"] == size
+    assert body["priorRootHash"] == body["rootHash"]
+    assert body["serverVerified"] is True
+
+
+async def test_consistency_prior_size_out_of_range_is_404() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:cons_oor", "RC09", 24)
+        r_zero = await c.get("/transparency/consistency/0")
+        r_big = await c.get("/transparency/consistency/999999")
+    # A tree size outside 1..current never existed in the log, so it is not-found, not a 400.
+    assert r_zero.status_code == 404
+    assert r_big.status_code == 404
+
+
+async def test_demo_consistency_proves_append_only() -> None:
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:dc1", "RD01", 31)
+        await _ingest(c, "urn:c2pa:dc2", "RD02", 32)
+        body = (await c.get("/demo/consistency")).json()
+    assert body["available"] is True
+    assert body["serverVerified"] is True
+    assert body["priorSize"] == body["treeSize"] - 1
+    # No locked bucket in the test env: honestly reported as not WORM-sealed; the proof still holds.
+    assert body["sealedInObjectLock"] is False
+    assert body["backend"] == "in-memory"

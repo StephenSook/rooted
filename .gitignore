@@ -49,6 +49,9 @@ build/
 # --- Playwright MCP scratch output (screenshots, snapshots, console logs) ---
 .playwright-mcp/
 
+# --- Local demo/beat screenshots (kept local for the submission gallery, never committed) ---
+/beat-*.png
+
 # --- Model weights / large binaries (use external hosting, not git) ---
 *.pt
 *.pth

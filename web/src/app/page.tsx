@@ -1,5 +1,6 @@
 import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
+import { B2EventsPanel } from "@/components/b2-events-panel";
 import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
 import { ContentCredentials } from "@/components/content-credentials";
@@ -49,6 +50,8 @@ export default function Home() {
       <TamperPanel />
 
       <StoragePanel />
+
+      <B2EventsPanel />
 
       <GenblazePanel />
 

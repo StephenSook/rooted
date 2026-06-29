@@ -22,6 +22,12 @@ services:
         value: "1"
       - key: PYTHON_VERSION
         value: "3.12.7"
+      # Live recovery index. With DATABASE_URL set to the Render Postgres (rooted-db, pgvector 0.7+),
+      # the resolver runs on Postgres with an HNSW bit_hamming_ops index over the PDQ bit(256) column;
+      # unset, it uses the in-memory index. sync:false -> paste rooted-db's Internal Database URL in
+      # the dashboard (the secret stays in Render, never in the repo).
+      - key: DATABASE_URL
+        sync: false
       # Backblaze B2 object store. sync:false keeps the values out of the repo; set them in the
       # Render dashboard. With all three present the demo writes asset/manifest/signature to B2.
       - key: B2_KEY_ID

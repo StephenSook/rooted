@@ -38,7 +38,7 @@ from rooted_provenance.models import (
     canonical_json,
 )
 from rooted_provenance.resolver import Resolver
-from rooted_provenance.signing import generate_keypair, sign_manifest
+from rooted_provenance.signing import sign_manifest
 from rooted_provenance.video import video_frames
 from rooted_storage.storage import Storage, asset_key, manifest_key, signature_key
 
@@ -192,7 +192,10 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
     seeded."""
     if resolver.get_manifest(DEMO_MANIFEST_ID) is not None:
         return
-    key, _pub = generate_keypair()
+    # Sign the durable B2 artifacts with the server's published anchor key (not a throwaway), so the
+    # stored COSE signatures verify against the key /transparency/checkpoint and /status advertise.
+    from rooted_api import sbr
+
     _register(
         resolver,
         log,
@@ -200,7 +203,7 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
         DEMO_WATERMARK_ID,
         demo_sample_bytes(),
         storage,
-        key,
+        sbr._signing_key,
         _PRIMARY_PROVENANCE,
     )
     for i, seed in enumerate(_EXTRA_SEEDS):
@@ -208,7 +211,14 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
         _demo_image(seed).save(buf, "PNG")
         mid = f"urn:c2pa:demo-{i:04d}-0000-0000-0000-000000000002"
         _register(
-            resolver, log, mid, f"DX{i:02d}", buf.getvalue(), storage, key, _FIXTURE_PROVENANCE
+            resolver,
+            log,
+            mid,
+            f"DX{i:02d}",
+            buf.getvalue(),
+            storage,
+            sbr._signing_key,
+            _FIXTURE_PROVENANCE,
         )
 
 
@@ -222,7 +232,8 @@ def seed_audio_demo(
     if audio_resolver.get_manifest(DEMO_AUDIO_MANIFEST_ID) is not None:
         return
     audio_bytes = audio_demo_bytes()
-    key, _pub = generate_keypair()
+    from rooted_api import sbr
+
     manifest = Manifest(
         manifest_id=DEMO_AUDIO_MANIFEST_ID,
         asset_sha256=hashlib.sha256(audio_bytes).hexdigest(),
@@ -239,7 +250,9 @@ def seed_audio_demo(
     if storage is not None:
         storage.put(asset_key(manifest.asset_sha256), audio_bytes)
         storage.put(manifest_key(DEMO_AUDIO_MANIFEST_ID), canonical_json(manifest.model_dump()))
-        storage.put(signature_key(DEMO_AUDIO_MANIFEST_ID), sign_manifest(manifest, key))
+        storage.put(
+            signature_key(DEMO_AUDIO_MANIFEST_ID), sign_manifest(manifest, sbr._signing_key)
+        )
 
 
 def seed_video_demo(
@@ -252,7 +265,8 @@ def seed_video_demo(
     if video_resolver.get_manifest(DEMO_VIDEO_MANIFEST_ID) is not None:
         return
     video_bytes = video_demo_bytes()
-    key, _pub = generate_keypair()
+    from rooted_api import sbr
+
     manifest = Manifest(
         manifest_id=DEMO_VIDEO_MANIFEST_ID,
         asset_sha256=hashlib.sha256(video_bytes).hexdigest(),
@@ -269,7 +283,9 @@ def seed_video_demo(
     if storage is not None:
         storage.put(asset_key(manifest.asset_sha256), video_bytes)
         storage.put(manifest_key(DEMO_VIDEO_MANIFEST_ID), canonical_json(manifest.model_dump()))
-        storage.put(signature_key(DEMO_VIDEO_MANIFEST_ID), sign_manifest(manifest, key))
+        storage.put(
+            signature_key(DEMO_VIDEO_MANIFEST_ID), sign_manifest(manifest, sbr._signing_key)
+        )
 
 
 # --- Multi-provider provenance demos: real generations from several distinct labs (via kie.ai), ---
@@ -350,7 +366,8 @@ def seed_providers(
     logged + written to B2 with honest provenance naming the real model + provider. Idempotent."""
     if resolver.get_manifest(_PROVIDERS[0]["manifest_id"]) is not None:
         return
-    key, _pub = generate_keypair()
+    from rooted_api import sbr
+
     for provider in _PROVIDERS:
         data = provider_demo_bytes(provider["slug"])
         if data is None:
@@ -362,7 +379,7 @@ def seed_providers(
             provider["watermark_id"],
             data,
             storage,
-            key,
+            sbr._signing_key,
             provider["provenance"],
         )
 

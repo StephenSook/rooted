@@ -40,8 +40,19 @@ export function ProvenanceReceipt({ manifestId }: { manifestId: string }) {
   useEffect(() => {
     const enc = encodeURIComponent(manifestId);
     Promise.all([
-      fetch(`/api/manifests/${enc}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/transparency/proof/${enc}`).then((r) => (r.ok ? r.json() : null)),
+      // Only a 404 is "not found"; any other non-OK is a real backend error -> the error state.
+      fetch(`/api/manifests/${enc}`).then((r) => {
+        if (r.ok) return r.json();
+        if (r.status === 404) return null;
+        throw new Error(`manifest ${r.status}`);
+      }),
+      // The proof is secondary: a 404 means no proof yet; any other failure is logged but does not
+      // fail the page, so the manifest still renders.
+      fetch(`/api/transparency/proof/${enc}`).then((r) => {
+        if (r.ok) return r.json();
+        if (r.status !== 404) console.warn("Rooted receipt: proof fetch failed", r.status);
+        return null;
+      }),
     ])
       .then(([mm, pp]) => {
         setM(mm);

@@ -78,7 +78,10 @@ provenance, recover manifests, and audit the transparency log conversationally.
 | Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation (seedream-5.0-lite), and the full generate -> store-on-B2 -> recover loop was run end to end |
 | TrustMark variant P watermark | wired + verified behind the `watermark` extra; opt-in in the API resolver (`ROOTED_REAL_WATERMARK`); recovery also works via the PDQ fallback |
 | Front end (Next 15, R3F, typed openapi client) + Render/Vercel deploy | wired + live at the URLs above (the demo seed runs credential-free; with B2 env set it stores assets on Backblaze B2) |
-| Audio/video modalities | not yet wired |
+| Audio + video modalities (spectral-PDQ audio, per-keyframe video PDQ) | wired + live |
+| Green C2PA "Trusted" via the conformance test trust list (labeled FOR TESTING ONLY) | wired + live |
+| Merkle checkpoint sealed to B2 Object Lock (compliance WORM), read back + signature verified | wired + live |
+| Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), C2PA lineage DAG, live MCP agent | wired + live |
 
 Numbers in any submission are taken from the actual test suite, never copied from draft prose.
 
@@ -98,14 +101,13 @@ Real C2PA v2.4 Soft Binding Resolution routes, contract-tested with schemathesis
 ```bash
 cp .env.example .env                       # fill real values (B2, provider keys, platform tokens)
 uv sync --locked --all-packages --dev      # backend deps
-uv run fastapi dev api/main.py             # the SBR API on :8000
-uv run dramatiq worker.main                # the ingest pipeline worker
+uv run fastapi dev api/main.py             # the SBR API on :8000 (ingest runs in-process)
 cd web && pnpm install && pnpm dev         # the front end
 ```
 
 `DATABASE_URL` selects the Postgres index (live recovery on Postgres); unset, Rooted runs on an
-in-memory index so the demo needs no database. `docker compose up` brings up Postgres (pgvector) and
-Redis for local Postgres-backed runs.
+in-memory index so the demo needs no database. `docker compose up` brings up Postgres (pgvector) for
+local Postgres-backed runs.
 
 ## Testing
 
@@ -133,8 +135,9 @@ so the live demo will not fall over under concurrent judges.
 
 - Provenance proves origin, not truth. A self-signed credential shows "Valid," not the green
   "Trusted" state, which needs a Conformance-Program CA. Rooted surfaces this distinction honestly in
-  the UI rather than hiding it; a labeled conformance-test-mode trust path is future work, not
-  claimed as wired.
+  the UI: the green "Trusted" state is shown by validating against the C2PA conformance test trust
+  list, labeled FOR TESTING ONLY on screen; a production deployment validates against the C2PA
+  production trust list.
 - The C2PA Content Credentials panel reads a separately C2PA-credentialed sample to demonstrate the
   in-browser reading capability; the recovered stripped asset has no embedded manifest (that is the
   point of recovery), so its credentials come from the repository, not from the bytes.

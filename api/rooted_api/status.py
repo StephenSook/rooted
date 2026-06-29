@@ -64,6 +64,7 @@ class StatusResponse(CamelModel):
     service: str
     transparency: TransparencyStatus
     storage: StorageStatus
+    recovery_index: str  # "postgres+hnsw" | "postgres+bitcount" | "in-memory"
     algorithms: dict[str, list[str]]
     generation: GenerationStatus
     recovery_self_test: RecoverySelfTest
@@ -140,6 +141,7 @@ async def status() -> StatusResponse:
             public_key_hex=sbr._public_key_hex(),
         ),
         storage=await run_in_threadpool(_storage_status),
+        recovery_index=sbr.get_resolver().index_kind(),
         algorithms={"watermarks": [ALG_TRUSTMARK_P], "fingerprints": []},
         generation=GenerationStatus(
             enabled=cfg["enabled"],

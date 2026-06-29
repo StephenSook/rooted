@@ -32,6 +32,10 @@ class Index(Protocol):
     def put_fingerprint(self, pdq_bits: str, manifest_id: str) -> None: ...
     def nearest_fingerprint(self, pdq_bits: str, threshold: int) -> tuple[str, int] | None: ...
     def fingerprints_for(self, manifest_id: str) -> list[str]: ...
+    def kind(self) -> str:
+        """A short label of the backing store and search path, for the live status surface."""
+        ...
+
     def register(self, manifest: Manifest, watermark_id: str, pdq_bits: str) -> None:
         """Atomically index a freshly generated asset (manifest, watermark binding, and PDQ
         together) so a partial ingest never leaves a manifest that cannot be recovered."""
@@ -79,6 +83,9 @@ class InMemoryIndex:
         self.put_manifest(manifest)
         self.put_watermark_binding(watermark_id, manifest.manifest_id)
         self.put_fingerprint(pdq_bits, manifest.manifest_id)
+
+    def kind(self) -> str:
+        return "in-memory"
 
 
 class Resolver:
@@ -130,6 +137,10 @@ class Resolver:
         """Cross-layer check: does the queried asset fingerprint-match the recovered manifest?"""
         bits, _ = compute_pdq(image)
         return self._fingerprint_matches(bits, manifest_id)
+
+    def index_kind(self) -> str:
+        """The recovery index's backing store and search path, for the live status surface."""
+        return self._index.kind()
 
     def close(self) -> None:
         """Release the index's resources (e.g. a Postgres pool); a no-op for the in-memory index."""

@@ -110,6 +110,7 @@ def test_hnsw_path_when_pgvector_available(index: PostgresIndex) -> None:
     # bit_count path is covered by test_nearest_fingerprint_threshold).
     if not index._hnsw:
         pytest.skip("pgvector >= 0.7 (bit_hamming_ops) not available on this database")
+    assert index.kind() == "postgres+hnsw"
     base = "0" * 256
     near = "0" * 246 + "1" * 10  # hamming distance 10
     far = "0" * 216 + "1" * 40  # hamming distance 40

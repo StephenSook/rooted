@@ -65,6 +65,7 @@ module = [
     "genblaze_core",
     "genblaze_gmicloud",
     "genblaze_openai",
+    "genblaze_assemblyai",
     "imageio_ffmpeg",
     "locust",
 ]

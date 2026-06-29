@@ -166,6 +166,26 @@ class TransparencyLog:
             checkpoint = self._checkpoint_for(size, size, root.hex(), priv, signed_at)
             return size, root, proof, checkpoint, verified
 
+    def signed_consistency(
+        self, prior_size: int, priv: Ed25519PrivateKey, signed_at: str
+    ) -> tuple[int, bytes, int, bytes, MerkleProof, MerkleCheckpoint, bool]:
+        """A Merkle consistency proof that the current log is an append-only extension of the tree
+        at `prior_size` (no earlier leaf altered or removed, only appends), plus the signed
+        checkpoint that pins the current head. Computed under one lock so the prior root, the
+        current root, the proof, and the checkpoint all describe one consistent pair of tree states.
+        Returns (prior_size, prior_root, size, current_root, proof, checkpoint, server_verified).
+        Raises ValueError if prior_size is not in 1..current_size."""
+        with self._lock:
+            size = self.size
+            if not 1 <= prior_size <= size:
+                raise ValueError(f"prior_size must be in 1..{size}, got {prior_size}")
+            prior_root = self.root(prior_size)
+            current_root = self.root(size)
+            proof = self.prove_consistency(prior_size, size)
+            verified = self.verify_consistency(prior_root, current_root, proof)
+            checkpoint = self._checkpoint_for(size, size, current_root.hex(), priv, signed_at)
+            return prior_size, prior_root, size, current_root, proof, checkpoint, verified
+
 
 def verify_checkpoint(cp: MerkleCheckpoint, pub: Ed25519PublicKey) -> bool:
     head = _checkpoint_head(cp.epoch, cp.tree_size, cp.root_hash)

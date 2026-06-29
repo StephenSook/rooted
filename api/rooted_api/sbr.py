@@ -675,6 +675,24 @@ class InclusionProofResponse(CamelModel):
     server_verified: bool
 
 
+class ConsistencyProofResponse(CamelModel):
+    """A self-contained, independently-verifiable Merkle consistency proof: the current log is an
+    append-only extension of the tree at prior_size (no earlier leaf altered or removed). The client
+    resolves the serialized proof from prior_root_hash to root_hash and confirms it, then binds
+    root_hash to the embedded signed checkpoint. server_verified is only this server's own check.
+    This is the same append-only guarantee Certificate Transparency publishes."""
+
+    prior_size: int
+    prior_root_hash: str
+    tree_size: int
+    root_hash: str
+    proof: dict[str, Any]
+    checkpoint: MerkleCheckpoint
+    public_key_hex: str
+    key_source: str
+    server_verified: bool
+
+
 class LogEntry(CamelModel):
     """One append-ordered transparency-log leaf."""
 
@@ -739,6 +757,37 @@ async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
         # 0-based to agree with GET /transparency/log, so a client can cross-reference the two.
         leaf_index=index - 1,
         leaf_hash=manifest.canonical_hash(),
+        tree_size=size,
+        root_hash=root.hex(),
+        proof=proof.serialize(),
+        checkpoint=checkpoint,
+        public_key_hex=_public_key_hex(),
+        key_source=_key_source,
+        server_verified=verified,
+    )
+
+
+@router.get(
+    "/transparency/consistency/{prior_size}",
+    response_model=ConsistencyProofResponse,
+    responses={404: {"description": "no such prior tree size (must be 1..current tree size)"}},
+)
+async def transparency_consistency(prior_size: int) -> ConsistencyProofResponse:
+    """A Certificate-Transparency-style consistency proof that the log only appended (never altered
+    or removed a leaf) between an earlier published tree size and the current head, pinned to the
+    signed current checkpoint. This is the append-only guarantee that makes the ledger auditable."""
+    # signed_consistency computes the two roots, the proof, and the signed checkpoint under one lock
+    # (a consistent snapshot) off the event loop. A prior_size outside 1..current is a state that
+    # never existed in the log, so 404 (not 400): that historical tree size is simply not there.
+    try:
+        psize, proot, size, root, proof, checkpoint, verified = await run_in_threadpool(
+            get_log().signed_consistency, prior_size, _signing_key, datetime.now(UTC).isoformat()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ConsistencyProofResponse(
+        prior_size=psize,
+        prior_root_hash=proot.hex(),
         tree_size=size,
         root_hash=root.hex(),
         proof=proof.serialize(),

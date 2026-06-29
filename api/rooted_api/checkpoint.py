@@ -20,6 +20,7 @@ import os
 from datetime import UTC, datetime
 
 from fastapi import APIRouter
+from fastapi.concurrency import run_in_threadpool
 
 from rooted_provenance.merkle import verify_checkpoint
 from rooted_provenance.models import CamelModel, MerkleCheckpoint
@@ -152,3 +153,103 @@ async def checkpoint_object() -> CheckpointObjectResponse:
     model = InMemoryStorage()
     seal_checkpoint(model, checkpoint, _retain_days())
     return _describe(model, "in-memory", None, checkpoint, modeled=True)
+
+
+class DemoConsistencyResponse(CamelModel):
+    """The append-only proof, demo-framed and tied to B2 Object Lock. The current log (tree_size)
+    is provably an extension of the tree at prior_size: no earlier leaf was altered or removed.
+    sealed_in_object_lock is true when the prior tree state is itself WORM-sealed in B2 under active
+    compliance retention and its sealed root matches the proof's prior root, so the consistency
+    proof is anchored to an object that physically cannot be rewritten. available is false only when
+    the log has a single leaf (nothing has been appended on top of an earlier state yet)."""
+
+    available: bool
+    prior_size: int
+    prior_root_hash: str
+    tree_size: int
+    root_hash: str
+    server_verified: bool
+    sealed_in_object_lock: bool
+    sealed_root_matches: bool
+    backend: str
+    bucket: str | None
+    retain_until: str | None
+    checkpoint: MerkleCheckpoint
+    public_key_hex: str
+    key_source: str
+
+
+@router.get("/demo/consistency", response_model=DemoConsistencyResponse, include_in_schema=False)
+async def demo_consistency() -> DemoConsistencyResponse:
+    """Prove the live transparency log only ever appended: a Merkle consistency proof from the
+    immediately-prior tree size to the current head, then a read-only check of whether that prior
+    state is WORM-sealed in B2 Object Lock (binding the proof to an immutable object). Read-only:
+    it never writes a checkpoint."""
+    log = sbr.get_log()
+    size = await run_in_threadpool(lambda: log.size)
+    current = sbr.current_checkpoint()
+    if size < 2:
+        # A single leaf: there is no earlier state to extend yet. Honest, not an error.
+        return DemoConsistencyResponse(
+            available=False,
+            prior_size=size,
+            prior_root_hash=current.root_hash,
+            tree_size=size,
+            root_hash=current.root_hash,
+            server_verified=False,
+            sealed_in_object_lock=False,
+            sealed_root_matches=False,
+            backend="in-memory",
+            bucket=None,
+            retain_until=None,
+            checkpoint=current,
+            public_key_hex=sbr._public_key_hex(),
+            key_source=sbr.key_source(),
+        )
+    prior_size = size - 1
+    psize, proot, tsize, root, _proof, checkpoint, verified = await run_in_threadpool(
+        log.signed_consistency, prior_size, sbr._signing_key, datetime.now(UTC).isoformat()
+    )
+    prior_root_hex = proot.hex()
+
+    sealed = False
+    sealed_root_matches = False
+    retain_until: str | None = None
+    backend = "in-memory"
+    bucket = os.environ.get("B2_BUCKET_LOCKED")
+    locked = sbr.get_locked_storage()
+    if locked is not None:
+        backend = "backblaze-b2"
+        try:
+            key = checkpoint_key(prior_size)
+            if await run_in_threadpool(locked.exists, key):
+                stored = MerkleCheckpoint.model_validate_json(
+                    await run_in_threadpool(locked.get, key)
+                )
+                sealed_root_matches = stored.root_hash == prior_root_hex
+                ret = await run_in_threadpool(locked.retention, key)
+                if ret is not None and ret.retain_until_ms is not None:
+                    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+                    sealed = ret.mode == "compliance" and ret.retain_until_ms > now_ms
+                    retain_until = datetime.fromtimestamp(
+                        ret.retain_until_ms / 1000, UTC
+                    ).isoformat()
+        except Exception as exc:  # noqa: BLE001 - the proof stands even if the B2 lookup fails
+            logger.error("demo-consistency: locked-seal binding lookup failed: %s", exc)
+
+    return DemoConsistencyResponse(
+        available=True,
+        prior_size=psize,
+        prior_root_hash=prior_root_hex,
+        tree_size=tsize,
+        root_hash=root.hex(),
+        server_verified=verified,
+        sealed_in_object_lock=sealed and sealed_root_matches,
+        sealed_root_matches=sealed_root_matches,
+        backend=backend,
+        bucket=bucket if locked is not None else None,
+        retain_until=retain_until,
+        checkpoint=checkpoint,
+        public_key_hex=sbr._public_key_hex(),
+        key_source=sbr.key_source(),
+    )

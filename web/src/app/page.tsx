@@ -3,6 +3,7 @@ import { AudioPanel } from "@/components/audio-panel";
 import { B2EventsPanel } from "@/components/b2-events-panel";
 import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
+import { ConsistencyPanel } from "@/components/consistency-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { GenblazePanel } from "@/components/genblaze-panel";
 import { GeneratePanel } from "@/components/generate-panel";
@@ -62,6 +63,8 @@ export default function Home() {
       <MerkleExplorer />
 
       <CheckpointLockPanel />
+
+      <ConsistencyPanel />
 
       <SupportedAlgorithms />
 

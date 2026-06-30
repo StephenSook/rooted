@@ -31,12 +31,19 @@ durable, vendor-neutral repository it recovers from, and that repository is B2.
 | CLI | `pip install ./cli`, then `rooted recover stripped.jpg` |
 | Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
 
-Open the site and click **recover the demo asset**: a real AI-generated image (created with Genblaze
-on GMI Cloud, model seedream-5.0-lite) is recovered to **VERIFIED**, the recovered manifest names that
-model, a separately C2PA-credentialed sample is read in the browser to show its Content Credentials,
-and the transparency log renders as a 3D Merkle tree. The deployed instance stores each asset,
-manifest, and signature content-addressably on Backblaze B2 (verifiable live at `/demo/storage`) and
-runs recovery on Postgres + HNSW. Provenance proves origin, not truth.
+The site opens on a bloomed galaxy hero with a live `/status` metrics ribbon: the transparency tree,
+the recovery self-test latency and similarity, the storage backend, the recovery index, and the
+generation state, all read live. The lead visual then performs the thesis on one real image: a
+C2PA-credentialed sample is stripped in the browser by a genuine JPEG re-encode (which drops the
+embedded manifest), and Rooted recovers the provenance to **VERIFIED** with a live SBR API call (the
+result is the real registry response, never hardcoded). Below that, a sticky scroll-spy nav runs over
+six acts: the recovery loop, every modality, standards-grade trust, Backblaze B2, the transparency
+log, and the open network. Along the way a real AI-generated image (created with Genblaze on GMI
+Cloud, model seedream-5.0-lite) recovers to VERIFIED with the recovered manifest naming that model, a
+separately C2PA-credentialed sample is read in the browser to show its Content Credentials, and the
+transparency log renders as a 3D Merkle tree. The deployed instance stores each asset, manifest, and
+signature content-addressably on Backblaze B2 (verifiable live at `/demo/storage`) and runs recovery
+on Postgres + HNSW (`recoveryIndex: postgres+hnsw`). Provenance proves origin, not truth.
 
 ## The problem
 
@@ -134,12 +141,23 @@ suite, never from draft prose.
 | FastMCP product server (judge-connectable over HTTP); a Claude provenance agent, opt-in when `ANTHROPIC_API_KEY` is set | wired + live |
 | Packaged `rooted` SBR CLI (`pip install ./cli`) | wired + live |
 | Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
-| B2 Event-Notification ingest (B2 upload to a signed webhook to auto-ingest to recoverable) | wired; pending account-level Event Notifications enablement |
+| Act-based web UI: a bloomed galaxy hero, a live `/status` metrics ribbon, the in-browser strip-and-recover reveal, and a sticky scroll-spy nav over six acts | wired + live |
+| Append-only Merkle consistency proof, bound to the WORM B2 checkpoint (`sealedInObjectLock`, `sealedRootMatches`) | wired + live |
+| Checkpoint-history: the chain of signed checkpoints, each re-verified with its own immutable retain-until (lists the real WORM objects when the locked bucket is list-readable, labeled when it falls back to the model) | wired + live |
+| Nuke-and-rebuild: rebuild the recovery index from B2 content-addressed objects alone (no database), then re-prove recovery (`demoRecovered`, similarity 100) | wired + live |
+| Adversarial robustness grid: which transforms a recovery survives (JPEG re-encode, downscale, upscale, and a screenshot recover; crop and rotation do not) | wired + live |
+| Federated SBR peer-forward across an open, vendor-neutral network (`ROOTED_SBR_PEERS`), advertised on the SBR surface | wired (no peers configured on the live instance) |
+| Shareable provenance-receipt permalink `/r/<manifestId>` (provenance, inclusion proof, VERIFIED badge, citable) | wired + live |
+| B2 Event-Notification ingest (a B2 upload posts a signed webhook; Rooted verifies the HMAC, fetches from B2, registers, and the asset becomes recoverable) | wired and tested; native delivery pending Backblaze's enterprise Event Notifications tier; the webhook, B2 fetch, ingest, and recovery are downstream-verified |
 
 ## The surfaces
 
-- **Web** (`/web`): a Next.js 15 front end with the FAILED to VERIFIED recovery reveal, the side-by-side
-  vs the official C2PA reader, the Content Credentials panel (c2pa-web), and a 3D Merkle explorer.
+- **Web** (`/web`): a Next.js 15 front end. A bloomed galaxy hero with a live `/status` metrics ribbon,
+  the in-browser strip-and-recover reveal as the lead visual, and a sticky scroll-spy nav over six acts
+  (the recovery loop, modalities, trust, Backblaze B2, the transparency log, the open network). Inside:
+  the side-by-side vs the official C2PA reader, the Content Credentials panel (c2pa-web), a 3D Merkle
+  explorer, the consistency, checkpoint-history, rebuild, robustness, and federation panels, and a
+  shareable provenance-receipt permalink at `/r/<manifestId>`.
 - **SBR API** (`/api`): the C2PA v2.4 Soft Binding Resolution routes, signing, the SB 942 redaction,
   the transparency routes, and the B2 event-ingest webhook.
 - **MCP server** (`/mcp` and mounted at `/mcp` on the API): three curated tools so an AI agent can
@@ -241,8 +259,10 @@ A scheduled keepalive ping keeps the live app and database warm through the judg
   advertised on `/services/supportedAlgorithms`.
 - A single Rooted instance only recovers manifests it has ingested. The SBR spec's larger goal is
   federated, cross-repository lookup; a single instance does not deliver that network effect.
-- The B2 Event-Notification ingest is wired and tested, and goes live once Backblaze enables
-  account-level Event Notifications (a request-gated feature).
+- The B2 Event-Notification ingest is wired and tested. Native event delivery is pending Backblaze's
+  enterprise Event Notifications tier (1 TB stored plus a payment); the webhook, the B2 fetch, the
+  ingest, and the recovery are downstream-verified, so once the rule is enabled, dropping an asset in
+  B2 makes it auto-recoverable.
 
 ## License
 

@@ -32,7 +32,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
@@ -516,6 +516,14 @@ async def ingest(
     return {"manifestId": manifest_id}
 
 
+def _cap_matches(result: SoftBindingQueryResult, max_results: int | None) -> SoftBindingQueryResult:
+    """Cap the matches list to the optional C2PA SBR maxResults param. When it is absent the result
+    is returned unchanged (full back-compat); maxResults >= 1 is enforced at the route boundary."""
+    if max_results is None or len(result.matches) <= max_results:
+        return result
+    return SoftBindingQueryResult(matches=result.matches[:max_results])
+
+
 @router.post(
     "/matches/byContent",
     response_model=SoftBindingQueryResult,
@@ -525,10 +533,49 @@ async def ingest(
         415: {"description": "invalid or unsupported image"},
     },
 )
-async def matches_by_content(file: UploadFile = File(...)) -> SoftBindingQueryResult:
+async def matches_by_content(
+    file: UploadFile = File(...),
+    # Typed int (not int | None) so the OpenAPI query param is a non-nullable optional integer: the
+    # schemathesis contract test then never feeds it the literal "null" (which FastAPI would 422).
+    # The Query default of None still makes it optional; an absent param arrives as None, so
+    # _cap_matches leaves the result unchanged (full back-compat).
+    max_results: int = Query(
+        default=None,
+        ge=1,
+        alias="maxResults",
+        description="C2PA SBR optional param: cap the number of returned matches.",
+    ),
+    hint_alg: str | None = Query(
+        default=None,
+        alias="hintAlg",
+        description=(
+            "C2PA SBR optional param: a soft-binding algorithm name (e.g. com.adobe.trustmark.P) "
+            "to aid resolution. With hintValue, the exact binding is tried before the content scan."
+        ),
+    ),
+    hint_value: str | None = Query(
+        default=None,
+        alias="hintValue",
+        description="C2PA SBR optional param: the soft-binding value for the matching hintAlg.",
+    ),
+) -> SoftBindingQueryResult:
+    """Recover a manifest from an uploaded asset by its perceptual content (PDQ).
+
+    The optional C2PA SBR params are honored without changing the default behavior: when none are
+    supplied the asset is matched by content exactly as before. maxResults caps the returned list.
+    hintAlg + hintValue are a watermark-first hint: the exact soft-binding lookup is tried before
+    the content scan, and a hit short-circuits it; a miss falls through to the normal content match,
+    so the hint only changes the path taken, never the manifest a given asset resolves to.
+    """
+    resolver = get_resolver()
+    if hint_alg is not None and hint_value is not None:
+        hinted = await run_in_threadpool(resolver.resolve_by_binding, hint_alg, hint_value)
+        if hinted.matches:
+            return _cap_matches(hinted, max_results)
     image = await _read_image(file)
     # resolve_by_content does blocking DB work and CPU-bound PDQ; offload it off the event loop.
-    return await run_in_threadpool(get_resolver().resolve_by_content, image)
+    result = await run_in_threadpool(resolver.resolve_by_content, image)
+    return _cap_matches(result, max_results)
 
 
 @router.post(
@@ -597,8 +644,23 @@ async def matches_by_video_content(file: UploadFile = File(...)) -> SoftBindingQ
 
 
 @router.get("/matches/byBinding", response_model=SoftBindingQueryResult)
-async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
-    return await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
+async def matches_by_binding(
+    alg: str,
+    value: str,
+    # Typed int (not int | None) to keep the OpenAPI query param a non-nullable optional integer, so
+    # the schemathesis contract test never sends the literal "null" (which FastAPI would 422). The
+    # Query default of None still makes it optional; an absent param arrives as None (no cap).
+    max_results: int = Query(
+        default=None,
+        ge=1,
+        alias="maxResults",
+        description="C2PA SBR optional param: cap the number of returned matches.",
+    ),
+) -> SoftBindingQueryResult:
+    """Recover a manifest by an exact soft binding (alg + value). The optional C2PA SBR maxResults
+    param caps the returned list; absent, the result is unchanged (full back-compat)."""
+    result = await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
+    return _cap_matches(result, max_results)
 
 
 # --- Federation: forward a soft-binding query to peer resolvers on a local miss ----------------

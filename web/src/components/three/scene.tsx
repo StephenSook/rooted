@@ -2,6 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { useState } from "react";
 
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion-pref";
@@ -26,6 +27,20 @@ export function Scene() {
         {/* Drop pixel ratio on weak devices, raise it on strong ones, to hold framerate. */}
         <PerformanceMonitor onIncline={() => setDpr(2)} onDecline={() => setDpr(1)} />
         <Galaxy reduced={reduced} />
+        {/* Bloom turns the additive starfield into a glowing nebula. Off under reduced motion (and
+            the backdrop renders a static gradient there anyway). multisampling 0 to match the
+            antialias-off Canvas; mipmapBlur is the cheap blur so the effect holds framerate. */}
+        {!reduced && (
+          <EffectComposer multisampling={0}>
+            <Bloom
+              intensity={0.85}
+              luminanceThreshold={0.12}
+              luminanceSmoothing={0.9}
+              radius={0.72}
+              mipmapBlur
+            />
+          </EffectComposer>
+        )}
       </Canvas>
     </div>
   );

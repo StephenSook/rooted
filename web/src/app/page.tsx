@@ -6,6 +6,7 @@ import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
 import { ConsistencyPanel } from "@/components/consistency-panel";
 import { ContentCredentials } from "@/components/content-credentials";
+import { FederationPanel } from "@/components/federation-panel";
 import { GenblazePanel } from "@/components/genblaze-panel";
 import { GeneratePanel } from "@/components/generate-panel";
 import { LineagePanel } from "@/components/lineage-panel";
@@ -76,6 +77,8 @@ export default function Home() {
       <CheckpointHistoryPanel />
 
       <SupportedAlgorithms />
+
+      <FederationPanel />
 
       <StatusPanel />
 

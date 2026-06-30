@@ -14,6 +14,7 @@ import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
 import { RebuildPanel } from "@/components/rebuild-panel";
 import { RecoverPanel } from "@/components/recover-panel";
+import { RecoverStrip } from "@/components/recover-strip";
 import { RobustnessPanel } from "@/components/robustness-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { StoragePanel } from "@/components/storage-panel";
@@ -27,6 +28,8 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-8 px-6 py-16">
       <Hero />
+
+      <RecoverStrip />
 
       <GeneratePanel />
 

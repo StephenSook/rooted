@@ -312,19 +312,50 @@ def _history_entry(storage: Storage, key: str) -> CheckpointHistoryEntry:
     )
 
 
+def _history_by_exists(locked: Storage, current_size: int) -> list[CheckpointHistoryEntry]:
+    """Enumerate the sealed checkpoints by checking each epoch's object existence, so a key that can
+    READ but not LIST the locked bucket (a least-privilege production key) still reads the REAL WORM
+    chain from B2 rather than falling back to the in-memory model. Bounded to the most recent
+    _HISTORY_CAP epochs. exists() uses get_file_info (readFiles), not ls (listFiles)."""
+    lo = max(1, current_size - _HISTORY_CAP + 1)
+    entries: list[CheckpointHistoryEntry] = []
+    for epoch in range(lo, current_size + 1):
+        key = checkpoint_key(epoch)
+        if locked.exists(key):
+            entries.append(_history_entry(locked, key))
+    return entries
+
+
 @router.get("/demo/checkpoint-history", response_model=CheckpointHistory, include_in_schema=False)
 async def checkpoint_history() -> CheckpointHistory:
     """The chain of signed Merkle checkpoints sealed to B2 Object Lock over time, each re-verified
-    and reporting its own immutable retain-until. With a locked bucket it lists the real WORM
-    objects; otherwise it seals the current checkpoint into the in-memory model and labels it."""
+    and reporting its own immutable retain-until. Reads the REAL objects from B2: a single ls when
+    the key can list, else per-epoch existence checks (so a least-privilege key still reads the real
+    chain). Only with no locked bucket does it seal the current checkpoint into the in-memory model
+    and label it."""
     locked = sbr.get_locked_storage()
     if locked is not None:
         bucket = os.environ.get("B2_BUCKET_LOCKED")
+        current_size = await run_in_threadpool(lambda: sbr.get_log().size)
+        entries: list[CheckpointHistoryEntry] | None = None
         try:
             keys = await run_in_threadpool(locked.list_keys, f"{CHECKPOINT_PREFIX}/")
             entries = [
                 await run_in_threadpool(_history_entry, locked, k) for k in keys[:_HISTORY_CAP]
             ]
+        except Exception as exc:  # noqa: BLE001 - the key may lack listFiles; fall back to exists
+            logger.warning(
+                "checkpoint-history: list failed (%s); enumerating the chain by existence", exc
+            )
+            try:
+                entries = await run_in_threadpool(_history_by_exists, locked, current_size)
+            except Exception as exc2:  # noqa: BLE001 - a real B2 outage; degrade to the model
+                logger.error(
+                    "B2_BUCKET_LOCKED is set but both list and existence reads failed; "
+                    "serving the in-memory model: %s",
+                    exc2,
+                )
+        if entries is not None:
             entries.sort(key=lambda e: e.epoch)
             return CheckpointHistory(
                 backend="backblaze-b2",
@@ -332,12 +363,6 @@ async def checkpoint_history() -> CheckpointHistory:
                 count=len(entries),
                 modeled=False,
                 entries=entries,
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade to the model, never 500
-            logger.error(
-                "B2_BUCKET_LOCKED is set but the checkpoint-history read failed; "
-                "serving the in-memory model: %s",
-                exc,
             )
     model = InMemoryStorage()
     cp = sbr.current_checkpoint()

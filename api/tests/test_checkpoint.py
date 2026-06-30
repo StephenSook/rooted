@@ -132,3 +132,33 @@ def test_checkpoint_history_real_locked_bucket_lists_the_chain(
     assert [e["epoch"] for e in d["entries"]] == [2, 3]  # sorted by epoch
     assert all(e["signatureVerified"] for e in d["entries"])
     assert all(e["immutable"] for e in d["entries"])
+
+
+class _NoListStorage(InMemoryStorage):
+    """A locked store that can read but cannot LIST (mirrors a least-privilege production B2 key
+    without listFiles): list_keys raises, exists/get/retention still work."""
+
+    def list_keys(self, prefix: str) -> list[str]:
+        raise PermissionError("listFiles capability not granted")
+
+
+def test_checkpoint_history_reads_real_chain_by_existence_when_list_denied(
+    reset: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("B2_BUCKET_LOCKED", "rooted-locked")
+    log = _log_with_leaves(2)
+    sbr.set_resolver(Resolver(InMemoryIndex(), FakeWatermarker()))
+    sbr.set_log(log)
+    locked = _NoListStorage()
+    sbr.set_locked_storage(locked)
+    seal_checkpoint(locked, sbr.current_checkpoint(), 30)  # epoch 2
+    log.append("urn:c2pa:demo-extra", "ab" * 32)
+    seal_checkpoint(locked, sbr.current_checkpoint(), 30)  # epoch 3
+    with TestClient(app) as c:
+        d = c.get("/demo/checkpoint-history").json()
+    # list is denied, but it reads the REAL WORM chain by per-epoch existence, NOT the model
+    assert d["backend"] == "backblaze-b2"
+    assert d["modeled"] is False
+    assert [e["epoch"] for e in d["entries"]] == [2, 3]
+    assert all(e["signatureVerified"] for e in d["entries"])
+    assert all(e["immutable"] for e in d["entries"])

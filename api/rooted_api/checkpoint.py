@@ -24,7 +24,12 @@ from fastapi.concurrency import run_in_threadpool
 
 from rooted_provenance.merkle import verify_checkpoint
 from rooted_provenance.models import CamelModel, MerkleCheckpoint
-from rooted_storage.storage import InMemoryStorage, Storage, checkpoint_key
+from rooted_storage.storage import (
+    CHECKPOINT_PREFIX,
+    InMemoryStorage,
+    Storage,
+    checkpoint_key,
+)
 
 from . import sbr
 
@@ -252,4 +257,92 @@ async def demo_consistency() -> DemoConsistencyResponse:
         checkpoint=checkpoint,
         public_key_hex=sbr._public_key_hex(),
         key_source=sbr.key_source(),
+    )
+
+
+class CheckpointHistoryEntry(CamelModel):
+    """One sealed checkpoint in the epoch chain, read back from the store and re-verified. immutable
+    is true when the object still carries active compliance retention (the WORM proof)."""
+
+    epoch: int
+    tree_size: int
+    root_hash: str
+    signed_at: str
+    signature_verified: bool
+    retain_until: str | None
+    immutable: bool
+
+
+class CheckpointHistory(CamelModel):
+    """The chain of signed Merkle checkpoints sealed to B2 over time. Each is an immutable WORM
+    object, so the chain is an append-only audit trail of the tree head at successive epochs;
+    combined with the consistency proof, it shows the live log extends every sealed checkpoint.
+    modeled is true when no locked bucket is configured and the in-memory model stands in."""
+
+    backend: str
+    bucket: str | None
+    count: int
+    modeled: bool
+    entries: list[CheckpointHistoryEntry]
+
+
+_HISTORY_CAP = 200
+
+
+def _history_entry(storage: Storage, key: str) -> CheckpointHistoryEntry:
+    """Read one sealed checkpoint back, re-verify its signature against the published key, and
+    report its B2 Object-Lock retention (the store's own record)."""
+    cp = MerkleCheckpoint.model_validate_json(storage.get(key))
+    verified = verify_checkpoint(cp, sbr.signing_public_key())
+    ret = storage.retention(key)
+    retain_until = None
+    immutable = False
+    if ret is not None and ret.retain_until_ms is not None:
+        retain_until = datetime.fromtimestamp(ret.retain_until_ms / 1000, UTC).isoformat()
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        immutable = ret.mode == "compliance" and ret.retain_until_ms > now_ms
+    return CheckpointHistoryEntry(
+        epoch=cp.epoch,
+        tree_size=cp.tree_size,
+        root_hash=cp.root_hash,
+        signed_at=cp.signed_at,
+        signature_verified=verified,
+        retain_until=retain_until,
+        immutable=immutable,
+    )
+
+
+@router.get("/demo/checkpoint-history", response_model=CheckpointHistory, include_in_schema=False)
+async def checkpoint_history() -> CheckpointHistory:
+    """The chain of signed Merkle checkpoints sealed to B2 Object Lock over time, each re-verified
+    and reporting its own immutable retain-until. With a locked bucket it lists the real WORM
+    objects; otherwise it seals the current checkpoint into the in-memory model and labels it."""
+    locked = sbr.get_locked_storage()
+    if locked is not None:
+        bucket = os.environ.get("B2_BUCKET_LOCKED")
+        try:
+            keys = await run_in_threadpool(locked.list_keys, f"{CHECKPOINT_PREFIX}/")
+            entries = [
+                await run_in_threadpool(_history_entry, locked, k) for k in keys[:_HISTORY_CAP]
+            ]
+            entries.sort(key=lambda e: e.epoch)
+            return CheckpointHistory(
+                backend="backblaze-b2",
+                bucket=bucket,
+                count=len(entries),
+                modeled=False,
+                entries=entries,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade to the model, never 500
+            logger.error(
+                "B2_BUCKET_LOCKED is set but the checkpoint-history read failed; "
+                "serving the in-memory model: %s",
+                exc,
+            )
+    model = InMemoryStorage()
+    cp = sbr.current_checkpoint()
+    seal_checkpoint(model, cp, _retain_days())
+    entry = await run_in_threadpool(_history_entry, model, checkpoint_key(cp.epoch))
+    return CheckpointHistory(
+        backend="in-memory", bucket=None, count=1, modeled=True, entries=[entry]
     )

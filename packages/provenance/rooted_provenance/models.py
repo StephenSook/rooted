@@ -135,3 +135,6 @@ class SupportedAlgorithms(CamelModel):
         default_factory=lambda: [AlgorithmEntry(alg=ALG_TRUSTMARK_P)]
     )
     fingerprints: list[AlgorithmEntry] = Field(default_factory=list)
+    # Configured federation peers: other SBR resolvers this node forwards a binding query to on a
+    # local miss, so recovery is an open, vendor-neutral network rather than a single repository.
+    peers: list[str] = Field(default_factory=list)

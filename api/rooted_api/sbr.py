@@ -16,6 +16,7 @@ import binascii
 import hashlib
 import hmac
 import io
+import ipaddress
 import logging
 import os
 import re
@@ -23,8 +24,10 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import anyio
+import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -449,7 +452,9 @@ def _validate_id(value: str, field: str) -> None:
 
 @router.get("/services/supportedAlgorithms", response_model=SupportedAlgorithms)
 async def supported_algorithms() -> SupportedAlgorithms:
-    return SupportedAlgorithms()
+    # Advertise the configured federation peers so the SBR network is discoverable from the spec
+    # service-description route.
+    return SupportedAlgorithms(peers=_peer_urls())
 
 
 @router.post(
@@ -594,6 +599,107 @@ async def matches_by_video_content(file: UploadFile = File(...)) -> SoftBindingQ
 @router.get("/matches/byBinding", response_model=SoftBindingQueryResult)
 async def matches_by_binding(alg: str, value: str) -> SoftBindingQueryResult:
     return await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
+
+
+# --- Federation: forward a soft-binding query to peer resolvers on a local miss ----------------
+_MAX_PEERS = 5
+
+
+def _peer_is_safe(url: str) -> bool:
+    """A configured peer is usable only if it is a well-formed http(s) URL, and in production only
+    if it is https and not a private/loopback/link-local host. Peers come from ROOTED_SBR_PEERS
+    (operator-set), never from a request, so this guards an operator misconfiguration that could
+    point a forward at an internal service, not an attacker-supplied URL."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    if os.environ.get("APP_ENV") != "production":
+        return True
+    if parsed.scheme != "https":
+        return False
+    try:
+        ip = ipaddress.ip_address(parsed.hostname)
+        return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved)
+    except ValueError:
+        return parsed.hostname.lower() != "localhost"
+
+
+def _peer_urls() -> list[str]:
+    """The configured, validated federation peers (at most _MAX_PEERS), read fresh so a changed
+    ROOTED_SBR_PEERS is picked up without a restart (and tests can set it per-case)."""
+    raw = os.environ.get("ROOTED_SBR_PEERS", "")
+    peers = [u.strip() for u in raw.split(",") if u.strip() and _peer_is_safe(u.strip())]
+    return peers[:_MAX_PEERS]
+
+
+def _peer_client() -> httpx.AsyncClient:
+    """The HTTP client used to reach federation peers. A seam so tests can inject a MockTransport
+    without patching the global httpx (which the app's own clients also use)."""
+    return httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0))
+
+
+async def _forward_to_peers(alg: str, value: str) -> SoftBindingQueryResult:
+    """Forward a soft-binding query to each configured peer SBR node until one recovers the
+    manifest, labeling it with the recovering peer. One bad peer never breaks the query: each error
+    is caught and the next peer tried. No peer ever sees the asset, only the {alg, value}."""
+    peers = _peer_urls()
+    if not peers:
+        return SoftBindingQueryResult(matches=[])
+    async with _peer_client() as client:
+        for base in peers:
+            try:
+                resp = await client.get(
+                    f"{base.rstrip('/')}/matches/byBinding", params={"alg": alg, "value": value}
+                )
+                resp.raise_for_status()
+                result = SoftBindingQueryResult.model_validate(resp.json())
+            except (httpx.HTTPError, ValueError) as exc:  # network error or a malformed peer body
+                logger.warning("federation: peer %s failed: %s", base, exc)
+                continue
+            if result.matches:
+                for match in result.matches:
+                    match.endpoint = base  # label which peer recovered it
+                return result
+    return SoftBindingQueryResult(matches=[])
+
+
+@router.get(
+    "/matches/byBinding/federated",
+    response_model=SoftBindingQueryResult,
+    include_in_schema=False,
+)
+async def matches_by_binding_federated(alg: str, value: str) -> SoftBindingQueryResult:
+    """Federated SBR: resolve a soft binding locally; on a local miss, forward the {alg, value}
+    query to the configured peer resolvers and return the first peer's recovered manifest, labeled
+    with its endpoint. Recovery becomes an open, vendor-neutral network, not one repository."""
+    local = await run_in_threadpool(get_resolver().resolve_by_binding, alg, value)
+    if local.matches:
+        return local
+    return await _forward_to_peers(alg, value)
+
+
+class FederationStatus(CamelModel):
+    """The federation surface: whether peer-forwarding is enabled and which peers are configured. A
+    live cross-node recovery needs a second resolver node with a complementary index; the forwarding
+    mechanism itself is wired and tested here."""
+
+    enabled: bool
+    peers: list[str]
+    note: str
+
+
+@router.get("/demo/federation", response_model=FederationStatus, include_in_schema=False)
+async def demo_federation() -> FederationStatus:
+    peers = _peer_urls()
+    note = (
+        "On a local miss the resolver forwards the soft-binding query to these peer SBR nodes and "
+        "returns the first peer's recovered manifest, labeled with its endpoint. A live cross-node "
+        "hit needs a second node with a complementary index."
+        if peers
+        else "No peers configured. Set ROOTED_SBR_PEERS to other SBR resolver URLs to federate "
+        "recovery across an open, vendor-neutral network."
+    )
+    return FederationStatus(enabled=bool(peers), peers=peers, note=note)
 
 
 @router.get(

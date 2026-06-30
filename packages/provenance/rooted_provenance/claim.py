@@ -24,7 +24,29 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from .models import ALG_TRUSTMARK_P, Manifest
 
-SOFT_BINDING_LABEL = "com.rooted.soft_binding"
+# The C2PA standard soft-binding assertion label (c2pa-rs labels::SOFT_BINDING, C2PA spec). A
+# third-party reader (c2pa-web, Adobe Verify, the CAI inspector) recognizes this assertion; a
+# vendor-custom label would be ignored as opaque. The payload still references the registered
+# TrustMark variant P algorithm, so only the label and shape change, not the watermark it points to.
+SOFT_BINDING_LABEL = "c2pa.soft-binding"
+ACTIONS_LABEL = "c2pa.actions"
+
+# IPTC DigitalSourceType for media produced by a generative AI model, the full IRI from the IPTC
+# digitalsourcetype vocabulary. Added to the c2pa.created action only for genuinely AI-generated
+# assets, so the credential says "AI-generated" exactly when that is true.
+DIGITAL_SOURCE_TYPE_TRAINED_ALGORITHMIC_MEDIA = (
+    "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+)
+
+# system_provenance.model values that name no concrete generator, so the asset is not claimed as AI.
+_NON_GENERATOR_MODELS = frozenset({"", "unknown", "none", "n/a", "na"})
+
+
+def _is_ai_generated(system_provenance: dict[str, Any]) -> bool:
+    """True when system provenance names a concrete generative model, so digitalSourceType is honest
+    to emit. A missing, empty, or placeholder model (e.g. "unknown") is not claimed as AI."""
+    model = system_provenance.get("model")
+    return isinstance(model, str) and model.strip().lower() not in _NON_GENERATOR_MODELS
 
 
 def make_es256_signer(cert_chain_pem: str, private_key_pem: bytes) -> c2pa.Signer:
@@ -44,19 +66,42 @@ def make_es256_signer(cert_chain_pem: str, private_key_pem: bytes) -> c2pa.Signe
 
 
 def build_manifest_def(
-    manifest: Manifest, watermark_id: str, fmt: str = "image/jpeg"
+    manifest: Manifest,
+    watermark_id: str,
+    fmt: str = "image/jpeg",
+    *,
+    ai_generated: bool | None = None,
 ) -> dict[str, Any]:
-    """The C2PA manifest definition, carrying the soft-binding pointer and the system provenance."""
+    """The C2PA manifest definition: the standard soft-binding pointer plus system provenance.
+
+    The soft binding uses the C2PA spec assertion (c2pa.soft-binding) with the standard
+    {alg, blocks:[{scope, value}]} shape, so a third-party reader recognizes it; the payload still
+    references the registered TrustMark variant P algorithm, and the watermark id is the block value
+    the SBR API later resolves.
+
+    digitalSourceType (IPTC trainedAlgorithmicMedia) is added to the c2pa.created action when the
+    asset is AI-generated, so the credential states that honestly. ai_generated defaults to
+    inferring it from system_provenance (a concrete model name); pass it explicitly to mark a known
+    non-AI fixture (ai_generated=False) regardless of the model field.
+    """
+    if ai_generated is None:
+        ai_generated = _is_ai_generated(manifest.system_provenance)
+    created: dict[str, Any] = {"action": "c2pa.created"}
+    if ai_generated:
+        created["digitalSourceType"] = DIGITAL_SOURCE_TYPE_TRAINED_ALGORITHMIC_MEDIA
     return {
         "claim_generator": "rooted/0.1.0",
         "claim_generator_info": [{"name": "rooted", "version": "0.1.0"}],
         "format": fmt,
         "title": manifest.manifest_id,
         "assertions": [
-            {"label": "c2pa.actions", "data": {"actions": [{"action": "c2pa.created"}]}},
+            {"label": ACTIONS_LABEL, "data": {"actions": [created]}},
             {
                 "label": SOFT_BINDING_LABEL,
-                "data": {"alg": ALG_TRUSTMARK_P, "value": watermark_id, "scope": "all"},
+                "data": {
+                    "alg": ALG_TRUSTMARK_P,
+                    "blocks": [{"scope": {}, "value": watermark_id}],
+                },
             },
             {
                 "label": "com.rooted.provenance",

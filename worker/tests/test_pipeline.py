@@ -82,9 +82,11 @@ def test_pipeline_embeds_c2pa_credential() -> None:
     result = pipeline.run("a white mug", watermark_id="RT05")
     assert result.credential_embedded is True
 
-    # the stored circulating asset carries a readable, valid C2PA credential with our soft-binding
+    # the stored circulating asset carries a readable, valid C2PA credential with the STANDARD
+    # C2PA soft-binding assertion (recognizable to any third-party reader).
     data, state = read_claim(storage.get(asset_key(result.manifest.asset_sha256)))
     assert state == "Valid"
     active = data["active_manifest"]
     labels = [a["label"] for a in data["manifests"][active]["assertions"]]
-    assert "com.rooted.soft_binding" in labels
+    assert "c2pa.soft-binding" in labels
+    assert "com.rooted.soft_binding" not in labels

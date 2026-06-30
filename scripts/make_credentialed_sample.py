@@ -45,8 +45,13 @@ def main() -> None:
         (CERTS / "es256_certs.pem").read_text(),
         (CERTS / "es256_private.key").read_bytes(),
     )
+    # This demo asset is a procedurally drawn image, not output of a generative model, so it is
+    # explicitly NOT marked AI-generated (no digitalSourceType): the credential stays honest.
     signed = sign_claim(
-        signer, jpeg, build_manifest_def(manifest, "DEMO", "image/jpeg"), "image/jpeg"
+        signer,
+        jpeg,
+        build_manifest_def(manifest, "DEMO", "image/jpeg", ai_generated=False),
+        "image/jpeg",
     )
 
     _mj, valid = read_claim(signed, fmt="image/jpeg")

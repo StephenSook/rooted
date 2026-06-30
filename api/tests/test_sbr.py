@@ -136,3 +136,66 @@ async def test_bycontent_rejects_oversized_upload(monkeypatch: pytest.MonkeyPatc
     async with _client() as c:
         r = await c.post("/matches/byContent", files={"file": ("a.png", _png(4), "image/png")})
     assert r.status_code == 413
+
+
+def test_cap_matches_caps_only_when_supplied() -> None:
+    # The C2PA SBR maxResults param caps the matches list; absent, the result is unchanged.
+    from rooted_api.sbr import _cap_matches
+    from rooted_provenance.models import Match, SoftBindingQueryResult
+
+    full = SoftBindingQueryResult(matches=[Match(manifest_id=f"m{i}") for i in range(3)])
+    assert len(_cap_matches(full, None).matches) == 3  # absent: unchanged (back-compat)
+    assert len(_cap_matches(full, 5).matches) == 3  # larger than the count: unchanged
+    assert [m.manifest_id for m in _cap_matches(full, 2).matches] == ["m0", "m1"]  # capped
+
+
+async def test_bycontent_hint_short_circuits_to_watermark_binding() -> None:
+    # hintAlg + hintValue are a REAL watermark-first hint: the exact soft-binding lookup runs before
+    # the content scan. Query with an asset that does not content-match while hinting at a known
+    # manifest; the hint recovers it, whereas the same query without the hint recovers nothing.
+    from rooted_api.sbr import get_resolver
+    from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest
+
+    image = Image.open(io.BytesIO(_png(50))).convert("RGB")
+    manifest = Manifest(
+        manifest_id="urn:c2pa:hint",
+        asset_sha256=hashlib.sha256(_png(50)).hexdigest(),
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream"},
+    )
+    get_resolver().register(manifest, image, "RThintwm")
+
+    other = _png(99)  # a different asset that does not content-match the registered one
+    async with _client() as c:
+        miss = await c.post("/matches/byContent", files={"file": ("o.png", other, "image/png")})
+        hit = await c.post(
+            "/matches/byContent",
+            files={"file": ("o.png", other, "image/png")},
+            params={"hintAlg": ALG_TRUSTMARK_P, "hintValue": "RThintwm"},
+        )
+    assert miss.status_code == 200
+    assert miss.json()["matches"] == []
+    assert hit.status_code == 200
+    assert hit.json()["matches"][0]["manifestId"] == "urn:c2pa:hint"
+
+
+async def test_bybinding_maxresults_validates_and_passes_through() -> None:
+    # maxResults must be >= 1 (else 422) and, when satisfiable, does not change a single result.
+    from rooted_api.sbr import get_resolver
+    from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest
+
+    image = Image.open(io.BytesIO(_png(51))).convert("RGB")
+    manifest = Manifest(
+        manifest_id="urn:c2pa:cap",
+        asset_sha256=hashlib.sha256(_png(51)).hexdigest(),
+        created_at="2026-06-25T00:00:00Z",
+        system_provenance={"model": "seedream"},
+    )
+    get_resolver().register(manifest, image, "RTcapwm")
+    base = {"alg": ALG_TRUSTMARK_P, "value": "RTcapwm"}
+    async with _client() as c:
+        bad = await c.get("/matches/byBinding", params={**base, "maxResults": 0})
+        ok = await c.get("/matches/byBinding", params={**base, "maxResults": 1})
+    assert bad.status_code == 422  # ge=1 rejects 0
+    assert ok.status_code == 200
+    assert ok.json()["matches"][0]["manifestId"] == "urn:c2pa:cap"

@@ -1,6 +1,7 @@
 import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
 import { B2EventsPanel } from "@/components/b2-events-panel";
+import { CheckpointHistoryPanel } from "@/components/checkpoint-history-panel";
 import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
 import { ConsistencyPanel } from "@/components/consistency-panel";
@@ -71,6 +72,8 @@ export default function Home() {
       <CheckpointLockPanel />
 
       <ConsistencyPanel />
+
+      <CheckpointHistoryPanel />
 
       <SupportedAlgorithms />
 

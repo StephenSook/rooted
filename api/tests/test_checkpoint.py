@@ -93,3 +93,42 @@ def test_seal_checkpoint_is_idempotent_and_immutable() -> None:
     assert k1 == k2 == checkpoint_key(5)
     with pytest.raises(ObjectLockedError):
         s.delete(k1)
+
+
+def test_checkpoint_history_modeled_when_no_locked_bucket(reset: None) -> None:
+    sbr.set_resolver(Resolver(InMemoryIndex(), FakeWatermarker()))
+    sbr.set_log(_log_with_leaves(4))
+    sbr.set_storage(None)
+    sbr.set_locked_storage(None)  # no locked bucket -> the chain is modeled, labeled
+    with TestClient(app) as c:
+        d = c.get("/demo/checkpoint-history").json()
+    assert d["backend"] == "in-memory"
+    assert d["modeled"] is True
+    assert d["count"] == 1
+    assert d["entries"][0]["treeSize"] == 4
+    assert d["entries"][0]["signatureVerified"] is True
+    assert d["entries"][0]["immutable"] is True
+
+
+def test_checkpoint_history_real_locked_bucket_lists_the_chain(
+    reset: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("B2_BUCKET_LOCKED", "rooted-locked")
+    log = _log_with_leaves(2)
+    sbr.set_resolver(Resolver(InMemoryIndex(), FakeWatermarker()))
+    sbr.set_log(log)
+    locked = InMemoryStorage()
+    sbr.set_locked_storage(locked)
+    # seal a chain of two epochs: at size 2, then append a leaf and seal at size 3
+    seal_checkpoint(locked, sbr.current_checkpoint(), 30)
+    log.append("urn:c2pa:demo-extra", "ab" * 32)
+    seal_checkpoint(locked, sbr.current_checkpoint(), 30)
+    with TestClient(app) as c:
+        d = c.get("/demo/checkpoint-history").json()
+    assert d["backend"] == "backblaze-b2"
+    assert d["modeled"] is False
+    assert d["bucket"] == "rooted-locked"
+    assert d["count"] == 2
+    assert [e["epoch"] for e in d["entries"]] == [2, 3]  # sorted by epoch
+    assert all(e["signatureVerified"] for e in d["entries"])
+    assert all(e["immutable"] for e in d["entries"])

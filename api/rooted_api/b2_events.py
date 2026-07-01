@@ -31,6 +31,7 @@ from typing import Any
 import anyio
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from PIL import Image
 from starlette.concurrency import run_in_threadpool
 
 from rooted_provenance.models import ALG_TRUSTMARK_P, CamelModel, Manifest, SoftBinding
@@ -92,14 +93,56 @@ class B2EventStatus(CamelModel):
     recent: list[B2IngestRecord]
 
 
+async def ingest_stored_object(
+    object_key: str, bucket: str, data: bytes, image: Image.Image, *, source: str
+) -> tuple[Manifest, bool]:
+    """Register B2-stored bytes for provenance recovery and append them to the transparency log.
+
+    The shared core of the event-webhook ingest, reused by the BYO direct-upload path
+    (rooted_api.byo) so both run the SAME path: PDQ fingerprint via resolver.register, the log
+    append, and a content-addressed manifest id (the same bytes always map to the same manifest, so
+    ingest is idempotent across redeliveries and paths). Returns (manifest, already_registered).
+    A log-append failure raises HTTPException(500) so a caller never reports ok for a manifest with
+    no inclusion proof; a later redelivery heals it via the registered-but-unlogged branch."""
+    from rooted_api import sbr
+
+    resolver = sbr.get_resolver()
+    log = sbr.get_log()
+    sha = hashlib.sha256(data).hexdigest()
+    manifest_id = f"urn:c2pa:b2-{sha}"
+    existing = await run_in_threadpool(resolver.get_manifest, manifest_id)
+    already_logged = bool(await run_in_threadpool(log.index_for, manifest_id))
+    if existing is not None and already_logged:
+        return existing, True  # true idempotent redelivery: registered AND proven
+    # Use the registered manifest's hash on a heal so the proof matches the registered record.
+    manifest = existing or Manifest(
+        manifest_id=manifest_id,
+        asset_sha256=sha,
+        created_at=datetime.now(UTC).isoformat(),
+        system_provenance={"source": source, "bucket": bucket, "objectKey": object_key},
+        soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=f"B2{sha[:10]}")],
+    )
+    if existing is None:
+        await run_in_threadpool(resolver.register, manifest, image, f"B2{sha[:10]}")
+    if not already_logged:
+        # Fail loudly on an append failure (matches /ingest): the asset is recoverable but has no
+        # inclusion proof. A redelivery (or a register retry) heals it via the branch above.
+        try:
+            await run_in_threadpool(log.append, manifest_id, manifest.canonical_hash())
+        except Exception as exc:  # noqa: BLE001 - surface it; never return ok with no proof
+            logger.error("b2 ingest: %s registered, log append failed: %s", manifest_id, exc)
+            raise HTTPException(
+                status_code=500, detail="manifest registered but log append failed"
+            ) from exc
+    return manifest, False
+
+
 async def _ingest_events(events: list[Any]) -> tuple[int, int]:
     """Fetch + register each ObjectCreated event under the watched prefix. Returns (ingested,
     skipped). Every per-event failure is caught: one bad object must not fail the whole webhook."""
     from rooted_api import sbr
 
     storage = sbr.get_storage()
-    resolver = sbr.get_resolver()
-    log = sbr.get_log()
     prefix = _watch_prefix()
     expected_bucket = _expected_bucket()
     ingested = 0
@@ -142,37 +185,18 @@ async def _ingest_events(events: list[Any]) -> tuple[int, int]:
             logger.info("b2-event: %s is not a decodable image (%s); skipping", name, exc)
             skipped += 1
             continue
-        sha = hashlib.sha256(data).hexdigest()
-        manifest_id = f"urn:c2pa:b2-{sha}"
-        existing = await run_in_threadpool(resolver.get_manifest, manifest_id)
-        already_logged = bool(await run_in_threadpool(log.index_for, manifest_id))
-        if existing is not None and already_logged:
+        # The shared register core (also used by the BYO direct-upload path). A log-append failure
+        # raises HTTPException(500) out of the webhook, matching /ingest: never ok with no proof.
+        manifest, already_registered = await ingest_stored_object(
+            name, bucket, data, image, source="b2-event-ingest"
+        )
+        if already_registered:
             skipped += 1  # true idempotent redelivery: registered AND proven
             continue
-        # Use the registered manifest's hash on a heal so the proof matches the registered record.
-        manifest = existing or Manifest(
-            manifest_id=manifest_id,
-            asset_sha256=sha,
-            created_at=datetime.now(UTC).isoformat(),
-            system_provenance={"source": "b2-event-ingest", "bucket": bucket, "objectKey": name},
-            soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=f"B2{sha[:10]}")],
-        )
-        if existing is None:
-            await run_in_threadpool(resolver.register, manifest, image, f"B2{sha[:10]}")
-        if not already_logged:
-            # Fail loudly on an append failure (matches /ingest): the asset is recoverable but has
-            # no inclusion proof. A B2 redelivery heals it via the existing-but-unlogged branch.
-            try:
-                await run_in_threadpool(log.append, manifest_id, manifest.canonical_hash())
-            except Exception as exc:  # noqa: BLE001 - surface it; never return ok with no proof
-                logger.error("b2-event: %s registered, log append failed: %s", manifest_id, exc)
-                raise HTTPException(
-                    status_code=500, detail="manifest registered but log append failed"
-                ) from exc
         _record(
             {
                 "objectKey": name,
-                "manifestId": manifest_id,
+                "manifestId": manifest.manifest_id,
                 "bucket": bucket,
                 "sizeBytes": len(data),
                 "ingestedAt": manifest.created_at,

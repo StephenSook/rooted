@@ -58,6 +58,8 @@ strict = true
 [[tool.mypy.overrides]]
 module = [
     "b2sdk.*",
+    "boto3",
+    "botocore.*",
     "c2pa",
     "pdqhash",
     "pymerkle",

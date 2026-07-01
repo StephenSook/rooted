@@ -2639,6 +2639,7 @@ version = "0.1.0"
 source = { editable = "api" }
 dependencies = [
     { name = "anthropic" },
+    { name = "boto3" },
     { name = "fastapi" },
     { name = "python-multipart" },
     { name = "rooted-mcp" },
@@ -2651,6 +2652,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
+    { name = "boto3", specifier = ">=1.43,<2" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "rooted-mcp", editable = "mcp" },

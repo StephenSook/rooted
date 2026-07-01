@@ -38,6 +38,12 @@ from pydantic import Field
 from pymerkle import MerkleProof
 from starlette.concurrency import run_in_threadpool
 
+from rooted_api.integrity import (
+    STAGED_NOTE,
+    IntegrityClashResponse,
+    compare_provenance,
+    load_staged_embedded_summary,
+)
 from rooted_provenance.audio import AudioDecodeError, audio_to_image
 from rooted_provenance.merkle import TransparencyLog, verify_checkpoint
 from rooted_provenance.models import (
@@ -1123,6 +1129,74 @@ async def demo_receipt(request: Request) -> VerifiedManifestReceipt:
     first manifest in the log when the primary is absent, and to a clear empty state when the log is
     empty, never 500."""
     return await run_in_threadpool(_demo_receipt, _self_base_url(request))
+
+
+# --- Integrity clash: the embedded C2PA claim versus the recovered registry record --------------
+
+
+def _integrity_clash() -> IntegrityClashResponse:
+    """The staged integrity-clash demonstration, computed for real: the registry record recovered
+    for the primary demo manifest (falling back to the first logged manifest that resolves), the
+    staged embedded claim from the fixture, and the field-by-field verdict. A missing registry
+    record or fixture degrades to a labeled empty state. Synchronous: run in a threadpool."""
+    from rooted_api.demo import DEMO_MANIFEST_ID  # local import: avoid a module-load cycle
+
+    embedded = load_staged_embedded_summary()
+    manifest = _lookup_manifest(DEMO_MANIFEST_ID)
+    if manifest is None:
+        entries, _size, _root = get_log().snapshot()
+        for _idx, mid, _hash in entries:
+            manifest = _lookup_manifest(mid)
+            if manifest is not None:
+                break
+    if manifest is None or embedded is None:
+        reasons = []
+        if manifest is None:
+            reasons.append("no manifest is available in the registry yet")
+        if embedded is None:
+            reasons.append("the staged embedded-claim fixture is unavailable")
+        return IntegrityClashResponse(
+            staged=True,
+            staged_note=STAGED_NOTE,
+            available=False,
+            embedded=embedded,
+            note="; ".join(reasons),
+        )
+    disclosed = manifest.redacted()  # SB 942 split: compare and disclose the read-time view
+    verdict = compare_provenance(disclosed, embedded)
+    if verdict.clash:
+        note = (
+            f"{len(verdict.contradictions)} contradiction(s) between the embedded claim and the "
+            "recovered registry record: the embedded provenance is laundered or forged."
+        )
+    else:
+        note = (
+            "the embedded claim agrees with the recovered registry record on every compared field"
+        )
+    return IntegrityClashResponse(
+        staged=True,
+        staged_note=STAGED_NOTE,
+        available=True,
+        manifest_id=manifest.manifest_id,
+        recovered=disclosed,
+        embedded=embedded,
+        verdict=verdict,
+        note=note,
+    )
+
+
+@router.get(
+    "/demo/integrity-clash",
+    response_model=IntegrityClashResponse,
+    include_in_schema=False,
+)
+async def demo_integrity_clash() -> IntegrityClashResponse:
+    """Integrity-clash detection, demonstrated on a STAGED forged claim (labeled in the response):
+    the embedded manifest summary claims a human camera capture while the registry record recovered
+    for the asset proves AI generation by a named model. Rooted holds both provenance layers, so it
+    names the contradiction field by field. The verdict is computed, never hardcoded; a missing
+    registry record or fixture returns a labeled empty state, never a 500."""
+    return await run_in_threadpool(_integrity_clash)
 
 
 @router.get(

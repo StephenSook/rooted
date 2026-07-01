@@ -1084,7 +1084,11 @@ async def verify_receipt(
 
 
 @router.delete(
-    "/manifests/{manifest_id}",
+    # The `:path` converter matches the GET catch-all's pattern exactly. With the default
+    # `[^/]+` converter this route matches ids (e.g. one containing a newline) that the GET
+    # catch-all's `.*` regex cannot, and Starlette then answers GET with an undocumented 405
+    # instead of falling through to 404.
+    "/manifests/{manifest_id:path}",
     operation_id="deleteManifestRefused",
     status_code=405,
     responses={405: {"description": "append-only WORM registry: manifests cannot be deleted"}},
@@ -1092,8 +1096,11 @@ async def verify_receipt(
 async def delete_manifest(manifest_id: str) -> None:
     """Refused by design. This registry is append-only and WORM-backed (Backblaze B2 Object Lock):
     every manifest is sealed into the transparency log and a signed checkpoint, so manifests are
-    immutable and cannot be deleted. Rooted likewise does not implement the spec PUT /bindings
-    mutation route. This is a deliberate, honest conformance statement, not a missing feature."""
+    immutable and cannot be deleted. The greedy converter extends the refusal to every subpath
+    (including /receipts). Rooted likewise does not implement the spec PUT /bindings mutation
+    route. This is a deliberate, honest conformance statement, not a missing feature."""
+    # RFC 9110: a 405 must carry an Allow header listing the methods the resource supports.
+    allow = "GET, POST" if manifest_id.endswith("/receipts") else "GET"
     raise HTTPException(
         status_code=405,
         detail=(
@@ -1101,6 +1108,7 @@ async def delete_manifest(manifest_id: str) -> None:
             "Object Lock, so a manifest cannot be deleted. Rooted also does not implement the spec "
             "PUT /bindings mutation route, by design."
         ),
+        headers={"Allow": allow},
     )
 
 

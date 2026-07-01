@@ -1,6 +1,7 @@
 import { AgentPanel } from "@/components/agent-panel";
 import { AudioPanel } from "@/components/audio-panel";
 import { B2EventsPanel } from "@/components/b2-events-panel";
+import { ByoUploadPanel } from "@/components/byo-upload-panel";
 import { CheckpointHistoryPanel } from "@/components/checkpoint-history-panel";
 import { CheckpointLockPanel } from "@/components/checkpoint-lock-panel";
 import { ComparisonPanel } from "@/components/comparison-panel";
@@ -104,6 +105,7 @@ export default function Home() {
         />
         <StoragePanel />
         <B2EventsPanel />
+        <ByoUploadPanel />
         <RebuildPanel />
         <GenblazePanel />
       </section>

@@ -21,6 +21,7 @@ import hashlib
 import io
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from rooted_api.dedup import counters as dedup_counters
 from rooted_api.dedup import put_if_absent
@@ -48,7 +49,7 @@ from rooted_provenance.models import (
 from rooted_provenance.resolver import InMemoryIndex, Resolver
 from rooted_provenance.signing import sign_manifest
 from rooted_provenance.video import video_frames
-from rooted_provenance.watermark import FakeWatermarker
+from rooted_provenance.watermark import FakeWatermarker, Watermarker
 from rooted_storage.storage import (
     MANIFEST_PREFIX,
     B2Storage,
@@ -887,3 +888,288 @@ async def demo_rebuild() -> RebuildResult:
             ),
         )
     return await run_in_threadpool(_compute_rebuild, storage, sbr.get_log())
+
+
+# --- ReMark failover: a real watermark-REMOVAL attack does not defeat recovery -------------------
+# The durable-content-credentials thesis: a watermark-removal attack (the ReMark literature:
+# regeneration/diffusion attacks that destroy an invisible watermark) does NOT defeat recovery,
+# because the perceptual fingerprint still matches. This is demonstrated on real primitives: the
+# real TrustMark variant P watermark is embedded, a real removal transform is applied that
+# empirically defeats the real TrustMark decoder, and the real PDQ fingerprint still recovers the
+# manifest. Nothing is asserted: the watermark decode and the fingerprint match are computed live on
+# the attacked bytes.
+
+# The staged attack: a strong Gaussian blur then a low-quality JPEG recompress. Empirically this
+# destroys the high-frequency invisible-watermark carrier (the TrustMark decoder returns no id)
+# while the low/mid-frequency perceptual structure the fingerprint hashes stays within threshold.
+REMARK_ATTACK_NAME = "gaussian blur + JPEG q30 (ReMark-class watermark removal)"
+REMARK_BLUR_RADIUS = 3
+REMARK_JPEG_QUALITY = 30
+REMARK_ATTACK_NOTE = (
+    "models the ReMark class of watermark-removal attacks (regeneration/diffusion): it destroys "
+    "the high-frequency invisible-watermark carrier while preserving the low/mid-frequency "
+    "perceptual structure the fingerprint hashes"
+)
+REMARK_STAGED_NOTE = (
+    "The watermark-removal attack is staged on the demo asset to demonstrate the failover: the "
+    "real TrustMark watermark is embedded, then a real removal transform is applied. The watermark "
+    "decode and the fingerprint match are both computed live on the attacked bytes; nothing here "
+    "is asserted."
+)
+REMARK_STAGED_NOTE_PARTIAL = (
+    "The removal attack is staged live on the demo asset and the fingerprint recovery is computed "
+    "live on the attacked bytes. This deployment does not carry the TrustMark model (the "
+    "`watermark` extra), so the watermark half is not run here; that the same attack defeats the "
+    "real TrustMark decoder is verified by the repository's real-model integration test, not "
+    "asserted by this response."
+)
+REMARK_WATERMARK_NOT_RUN_NOTE = (
+    "not run: the TrustMark model is not installed in this deployment. The repository's real-model "
+    "integration test (test_real_removal_attack_defeats_trustmark_but_fingerprint_survives) "
+    "verifies this exact attack defeats the real decoder."
+)
+
+
+def _remark_attack(img: Image.Image) -> bytes:
+    """A real ReMark-class watermark-removal transform: strong Gaussian blur then a low-quality JPEG
+    recompress. Destroys the high-frequency invisible-watermark signal while leaving the perceptual
+    structure (what PDQ hashes) intact. Returns the attacked JPEG bytes."""
+    blurred = img.convert("RGB").filter(ImageFilter.GaussianBlur(REMARK_BLUR_RADIUS))
+    buf = io.BytesIO()
+    blurred.save(buf, "JPEG", quality=REMARK_JPEG_QUALITY)
+    return buf.getvalue()
+
+
+# The real TrustMark P watermarker for staging the removal attack. Loading it pulls torch (the
+# `watermark` extra), so it is built lazily and cached; on the lean default deploy the import fails
+# and the endpoint degrades honestly (available=false) rather than faking a decode. Overridable in
+# tests (they inject a FakeWatermarker so the combinatorial cases run without torch).
+_remark_watermarker: Watermarker | None = None
+_remark_watermarker_loaded = False
+_remark_watermarker_lock = threading.Lock()
+# The staged attacked bytes are cached in-process keyed by the staging watermarker's identity, so
+# the embed + attack runs once per process for the real singleton and recomputes when a test swaps
+# the watermarker. Reset between tests via reset_remark_cache.
+_remark_attacked: tuple[int, bytes] | None = None
+
+
+def reset_remark_cache() -> None:
+    """Clear the cached real watermarker and staged attacked bytes (tests, or to force a reload)."""
+    global _remark_watermarker, _remark_watermarker_loaded, _remark_attacked
+    with _remark_watermarker_lock:
+        _remark_watermarker = None
+        _remark_watermarker_loaded = False
+        _remark_attacked = None
+
+
+def _load_remark_watermarker() -> Watermarker | None:
+    """The real TrustMark variant P watermarker, or None when the `watermark` extra is not installed
+    (or the model cannot load) so the endpoint degrades honestly instead of faking a decode. Cached
+    after the first load. Tests monkeypatch this seam to inject a FakeWatermarker."""
+    global _remark_watermarker, _remark_watermarker_loaded
+    if _remark_watermarker_loaded:
+        return _remark_watermarker
+    with _remark_watermarker_lock:
+        if not _remark_watermarker_loaded:
+            try:
+                from rooted_provenance.watermark import TrustMarkWatermarker
+
+                _remark_watermarker = TrustMarkWatermarker()
+            except Exception as exc:  # noqa: BLE001 - ImportError or a model-load failure degrades
+                logger.info("remark-failover: real TrustMark unavailable, degrading: %s", exc)
+                _remark_watermarker = None
+            _remark_watermarker_loaded = True
+    return _remark_watermarker
+
+
+def _staged_attacked_bytes(watermarker: Watermarker | None) -> bytes:
+    """Embed the demo watermark (when a watermarker is available) then apply the real removal
+    attack, returning the attacked JPEG bytes. With no watermarker (the lean deploy) the attack
+    runs on the demo asset as shipped, which is enough for the live fingerprint half. Cached by
+    the staging watermarker's identity so the real singleton stages once."""
+    global _remark_attacked
+    cached = _remark_attacked
+    if cached is not None and cached[0] == id(watermarker):
+        return cached[1]
+    base = Image.open(io.BytesIO(demo_sample_bytes())).convert("RGB")
+    marked = watermarker.encode(base, DEMO_WATERMARK_ID) if watermarker is not None else base
+    attacked = _remark_attack(marked)
+    _remark_attacked = (id(watermarker), attacked)
+    return attacked
+
+
+class RemarkAttack(CamelModel):
+    """The staged watermark-removal transform: its name, parameters, and what class it models."""
+
+    name: str
+    parameters: dict[str, Any]
+    note: str
+
+
+class RemarkWatermark(CamelModel):
+    """The watermark-recovery attempt on the attacked bytes. recovered is the REAL decode verdict
+    (the decoded id equals the expected id); decoded_id is whatever the real decoder returned (null
+    when the removal attack destroyed the mark). When the model is not deployed, attempted is
+    false and note says where the watermark half is actually verified."""
+
+    attempted: bool
+    recovered: bool
+    decoded_id: str | None
+    expected_id: str
+    note: str | None = None
+
+
+class RemarkFingerprint(CamelModel):
+    """The perceptual-fingerprint recovery on the same attacked bytes. recovered is the real
+    byContent match to the demo manifest through the resolver; hamming_distance is the raw PDQ
+    distance from the original (always present), matched_manifest_id is whatever the resolver
+    matched (null on no match)."""
+
+    attempted: bool
+    recovered: bool
+    hamming_distance: int
+    threshold: int
+    matched_manifest_id: str | None
+
+
+class RemarkFailover(CamelModel):
+    """Whether a real watermark-removal attack defeats recovery. When the real TrustMark model is
+    available and the demo asset is registered, the attack is staged live and the two soft-binding
+    recoveries are reported honestly; otherwise available is false with a reason."""
+
+    available: bool
+    staged: bool
+    staged_note: str
+    reason: str | None = None
+    attack: RemarkAttack | None = None
+    watermark: RemarkWatermark | None = None
+    fingerprint: RemarkFingerprint | None = None
+    verdict: str | None = None
+
+
+def _remark_verdict(watermark_recovered: bool, fingerprint_recovered: bool) -> str:
+    """The honest one-line summary of the two live recovery results (never hardcoded to the
+    interesting case)."""
+    if not watermark_recovered and fingerprint_recovered:
+        return (
+            "recovery survives watermark removal via the perceptual fingerprint: the attack "
+            "destroyed the TrustMark watermark, but the fingerprint still recovered the manifest"
+        )
+    if watermark_recovered and fingerprint_recovered:
+        return (
+            "the attack did not defeat the watermark: both soft bindings still recover the "
+            "manifest, so the fingerprint failover was not exercised on this transform"
+        )
+    if not watermark_recovered and not fingerprint_recovered:
+        return (
+            "the attack defeated both soft bindings: neither the watermark nor the perceptual "
+            "fingerprint recovered the manifest under this transform"
+        )
+    return (
+        "the watermark survived but the perceptual fingerprint did not recover the manifest under "
+        "this transform"
+    )
+
+
+def _compute_remark_failover(watermarker: Watermarker | None, resolver: Resolver) -> RemarkFailover:
+    """Stage the removal attack on the demo asset and compute the recovery verdicts live. The
+    watermark verdict is a real decode on the attacked bytes; the fingerprint verdict is a real
+    byContent match through the resolver. Without the TrustMark model (the lean deploy) the
+    fingerprint half still runs live and the watermark half honestly reports attempted=false with
+    a pointer to the real-model integration test. Degrades to available=false (never 500) only
+    when the demo asset is not registered."""
+    if resolver.get_manifest(DEMO_MANIFEST_ID) is None:
+        return RemarkFailover(
+            available=False,
+            staged=True,
+            staged_note=REMARK_STAGED_NOTE if watermarker else REMARK_STAGED_NOTE_PARTIAL,
+            reason="the demo asset is not registered in the recovery index (empty registry)",
+        )
+    base_bits, _ = compute_pdq(Image.open(io.BytesIO(demo_sample_bytes())).convert("RGB"))
+    attacked_bytes = _staged_attacked_bytes(watermarker)
+    attacked = Image.open(io.BytesIO(attacked_bytes)).convert("RGB")
+
+    # Watermark verdict: run the REAL decoder on the attacked bytes when the model is deployed.
+    # Nothing is asserted; a lean deploy reports attempted=false and where the half IS verified.
+    if watermarker is not None:
+        decoded_id, _conf = watermarker.decode(attacked)
+        watermark_recovered = decoded_id == DEMO_WATERMARK_ID
+        watermark = RemarkWatermark(
+            attempted=True,
+            recovered=watermark_recovered,
+            decoded_id=decoded_id,
+            expected_id=DEMO_WATERMARK_ID,
+        )
+    else:
+        watermark_recovered = False
+        watermark = RemarkWatermark(
+            attempted=False,
+            recovered=False,
+            decoded_id=None,
+            expected_id=DEMO_WATERMARK_ID,
+            note=REMARK_WATERMARK_NOT_RUN_NOTE,
+        )
+
+    # Fingerprint verdict: the real byContent recovery through the resolver, plus the raw PDQ
+    # distance from the original (computed independently so it is always reported).
+    attacked_bits, _ = compute_pdq(attacked)
+    distance = hamming(base_bits, attacked_bits)
+    result = resolver.resolve_by_content(attacked)
+    match = result.matches[0] if result.matches else None
+    fingerprint_recovered = match is not None and match.manifest_id == DEMO_MANIFEST_ID
+
+    if watermarker is not None:
+        verdict = _remark_verdict(watermark_recovered, fingerprint_recovered)
+    elif fingerprint_recovered:
+        verdict = (
+            "the perceptual fingerprint recovered the manifest under the ReMark-class attack "
+            "(computed live); the watermark half was not run here because the TrustMark model is "
+            "not deployed, and is verified by the repository's real-model integration test"
+        )
+    else:
+        verdict = (
+            "the attack defeated the perceptual fingerprint on this deployment; the watermark "
+            "half was not run here because the TrustMark model is not deployed"
+        )
+
+    return RemarkFailover(
+        available=True,
+        staged=True,
+        staged_note=REMARK_STAGED_NOTE if watermarker else REMARK_STAGED_NOTE_PARTIAL,
+        attack=RemarkAttack(
+            name=REMARK_ATTACK_NAME,
+            parameters={
+                "gaussianBlurRadius": REMARK_BLUR_RADIUS,
+                "jpegQuality": REMARK_JPEG_QUALITY,
+            },
+            note=REMARK_ATTACK_NOTE,
+        ),
+        watermark=watermark,
+        fingerprint=RemarkFingerprint(
+            attempted=True,
+            recovered=fingerprint_recovered,
+            hamming_distance=distance,
+            threshold=PDQ_HAMMING_THRESHOLD,
+            matched_manifest_id=match.manifest_id if match else None,
+        ),
+        verdict=verdict,
+    )
+
+
+@router.get(
+    "/demo/remark-failover",
+    response_model=RemarkFailover,
+    include_in_schema=False,
+)
+async def demo_remark_failover() -> RemarkFailover:
+    """Demonstrate that a real watermark-REMOVAL attack does not defeat recovery. Stages a real
+    ReMark-class removal transform (Gaussian blur + JPEG q30) on the watermarked demo asset, then
+    reports two live recovery results: the real TrustMark decode on the attacked bytes (which the
+    attack defeats) and the real PDQ fingerprint match through the resolver (which survives). The
+    verdict is computed from the two results, never hardcoded. Degrades honestly (available=false)
+    when the real TrustMark model is unavailable or the demo asset is unregistered, never a 500.
+    Read-only; the heavy embed/attack/decode runs off the event loop."""
+    from rooted_api import sbr
+
+    watermarker = _load_remark_watermarker()
+    return await run_in_threadpool(_compute_remark_failover, watermarker, sbr.get_resolver())

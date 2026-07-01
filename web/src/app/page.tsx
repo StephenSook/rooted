@@ -13,6 +13,7 @@ import { Hero } from "@/components/hero";
 import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
 import { RebuildPanel } from "@/components/rebuild-panel";
+import { ReceiptPanel } from "@/components/receipt-panel";
 import { RecoverPanel } from "@/components/recover-panel";
 import { RecoverStrip } from "@/components/recover-strip";
 import { RobustnessPanel } from "@/components/robustness-panel";
@@ -89,6 +90,7 @@ export default function Home() {
         <ContentCredentials />
         <TamperPanel />
         <LineagePanel />
+        <ReceiptPanel />
         <SupportedAlgorithms />
       </section>
 

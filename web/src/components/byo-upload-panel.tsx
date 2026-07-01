@@ -13,7 +13,7 @@ const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_BYTES = 26214400; // 25 MiB, the server-side limit
 
 const CORS_BLOCKED_MESSAGE =
-  "The direct-to-B2 upload was blocked (bucket CORS rule not applied yet). The API and registration flow are unaffected.";
+  "The direct-to-B2 upload was blocked in the browser (content security policy or bucket CORS). The API and registration flow are unaffected.";
 
 type StageState = "pending" | "active" | "done" | "failed";
 

@@ -16,17 +16,20 @@ const API_PROXY_TARGET = process.env.API_PROXY_TARGET ?? "http://localhost:8000"
 // attempt one. The real wins here are frame-ancestors 'none', object-src 'none', and the hardening
 // headers below, not a locked-down script-src.
 //
-// Browser network is all same-origin: /api/* is proxied (rewrites below), the c2pa trust files and
-// static assets are local, so connect-src 'self' covers them. The API host is added explicitly for
-// robustness even though the only cross-origin fetch to it is server-side. worker-src allows the
-// blob worker c2pa-web may spawn; img-src allows data: and blob: for generated and decoded images.
+// Browser network is nearly all same-origin: /api/* is proxied (rewrites below), the c2pa trust
+// files and static assets are local, so connect-src 'self' covers them. The API host is added
+// explicitly for robustness even though the only cross-origin fetch to it is server-side. The one
+// deliberate cross-origin fetch is the BYO panel's presigned PUT direct to the Backblaze B2 S3
+// endpoint (the file must not pass through the API), so exactly that host is allowed. worker-src
+// allows the blob worker c2pa-web may spawn; img-src allows data: and blob: for generated and
+// decoded images.
 const contentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://rooted-api-ubvc.onrender.com",
+  "connect-src 'self' https://rooted-api-ubvc.onrender.com https://s3.us-east-005.backblazeb2.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",

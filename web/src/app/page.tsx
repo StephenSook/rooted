@@ -18,6 +18,7 @@ import { RebuildPanel } from "@/components/rebuild-panel";
 import { ReceiptPanel } from "@/components/receipt-panel";
 import { RecoverPanel } from "@/components/recover-panel";
 import { RecoverStrip } from "@/components/recover-strip";
+import { RemarkPanel } from "@/components/remark-panel";
 import { RobustnessPanel } from "@/components/robustness-panel";
 import { SectionNav } from "@/components/section-nav";
 import { StatusPanel } from "@/components/status-panel";
@@ -92,6 +93,7 @@ export default function Home() {
         <ContentCredentials />
         <TamperPanel />
         <IntegrityClashPanel />
+        <RemarkPanel />
         <LineagePanel />
         <ReceiptPanel />
         <SupportedAlgorithms />

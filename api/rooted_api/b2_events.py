@@ -34,6 +34,7 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 from starlette.concurrency import run_in_threadpool
 
+from rooted_api.dedup import record_idempotent_register
 from rooted_provenance.models import ALG_TRUSTMARK_P, CamelModel, Manifest, SoftBinding
 
 router = APIRouter()
@@ -113,6 +114,7 @@ async def ingest_stored_object(
     existing = await run_in_threadpool(resolver.get_manifest, manifest_id)
     already_logged = bool(await run_in_threadpool(log.index_for, manifest_id))
     if existing is not None and already_logged:
+        record_idempotent_register()  # dedup evidence: answered from the existing record
         return existing, True  # true idempotent redelivery: registered AND proven
     # Use the registered manifest's hash on a heal so the proof matches the registered record.
     manifest = existing or Manifest(

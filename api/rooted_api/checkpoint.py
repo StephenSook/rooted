@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 
+from rooted_api.dedup import record_exists_skip
 from rooted_provenance.merkle import verify_checkpoint
 from rooted_provenance.models import CamelModel, MerkleCheckpoint
 from rooted_storage.storage import (
@@ -54,6 +55,7 @@ def seal_checkpoint(locked: Storage, checkpoint: MerkleCheckpoint, retain_days: 
     we leave the existing immutable record authoritative, no re-write. Returns the object key."""
     key = checkpoint_key(checkpoint.epoch)
     if locked.exists(key):
+        record_exists_skip()  # dedup evidence: this epoch's immutable object is already sealed
         return key
     body = checkpoint.model_dump_json().encode()
     locked.put(key, body, object_lock=True, retain_days=retain_days)

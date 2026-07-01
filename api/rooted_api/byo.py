@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from rooted_api.b2_events import ingest_stored_object
+from rooted_api.dedup import record_idempotent_register
 from rooted_provenance.models import CamelModel
 from rooted_storage.storage import B2Storage
 
@@ -240,6 +241,7 @@ async def byo_register(req: ByoRegisterRequest) -> ByoRegisterResponse:
         cached_id, cached_size = cached
         manifest = await run_in_threadpool(sbr.get_resolver().get_manifest, cached_id)
         if manifest is not None:
+            record_idempotent_register()  # dedup evidence: answered from the key cache, no re-fetch
             return ByoRegisterResponse(
                 manifest_id=manifest.manifest_id,
                 object_key=key,

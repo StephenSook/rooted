@@ -56,6 +56,35 @@ def _parse_retention(file_retention: object) -> RetentionInfo:
     return RetentionInfo(mode=mode_val if mode_val is not None else "none", retain_until_ms=until)
 
 
+@dataclass(frozen=True)
+class BucketProperties:
+    """A bucket's live server-side configuration, read back from the store. The encryption mode and
+    algorithm are None when the store reports them unknown (for example an application key without
+    readBucketEncryption). lifecycle_rules are the raw B2 rule dicts (B2's own field names:
+    fileNamePrefix, daysFromUploadingToHiding, daysFromHidingToDeleting)."""
+
+    default_encryption_mode: str | None  # "SSE-B2" | "none" | None (unknown to this key)
+    default_encryption_algorithm: str | None  # "AES256" | None
+    lifecycle_rules: list[dict[str, object]]
+
+
+def _bucket_properties(fresh_bucket: object) -> BucketProperties:
+    """Map a b2sdk Bucket (a fresh state) to BucketProperties. b2sdk exposes the default encryption
+    as an EncryptionSetting whose mode/algorithm enums carry `.value` ("SSE-B2"/"none"/"AES256";
+    the UNKNOWN mode's value is None), and the lifecycle rules as a list of dicts. Kept as a pure
+    helper so it is unit-testable against the real b2sdk shape without B2 credentials, like
+    _parse_retention above."""
+    enc = getattr(fresh_bucket, "default_server_side_encryption", None)
+    mode = getattr(getattr(enc, "mode", None), "value", None)
+    algorithm = getattr(getattr(enc, "algorithm", None), "value", None)
+    rules = [dict(r) for r in (getattr(fresh_bucket, "lifecycle_rules", None) or [])]
+    return BucketProperties(
+        default_encryption_mode=mode,
+        default_encryption_algorithm=algorithm,
+        lifecycle_rules=rules,
+    )
+
+
 class ObjectLockedError(Exception):
     """Raised when a delete is attempted on an Object-Lock-retained object."""
 
@@ -204,3 +233,10 @@ class B2Storage:
             )
             if fv.file_name.startswith(prefix)
         ]
+
+    def properties(self) -> BucketProperties:
+        """The bucket's live configuration (default server-side encryption + lifecycle rules), read
+        fresh from B2 (one b2_list_buckets round trip, so the authorized key needs listBuckets).
+        The encryption comes back as None when the key lacks readBucketEncryption; callers report
+        that honestly as unknown rather than failing. Errors propagate so an outage is visible."""
+        return _bucket_properties(self._bucket.get_fresh_state())

@@ -294,4 +294,14 @@ def test_scoped_key_plan_is_the_exact_least_privilege_request() -> None:
         "readBucketLifecycleRules",
     ]
     assert request["bucketName"] == "rooted-dev"
+    assert request["bucketNames"] == ["rooted-dev"]
     assert request["namePrefix"] is None  # bucket-only restriction; byo/ shape enforced in byo.py
+
+    # --include-locked: both buckets, plus exactly the two retention capabilities the
+    # Object-Lock checkpoint paths need (write with compliance retention, read it back).
+    both = scoped.plan("rooted-dev", "rooted-locked")
+    assert both["bucketNames"] == ["rooted-dev", "rooted-locked"]
+    assert both["capabilities"] == request["capabilities"] + [
+        "writeFileRetentions",
+        "readFileRetentions",
+    ]

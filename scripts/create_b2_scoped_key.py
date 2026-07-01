@@ -15,8 +15,13 @@ Safety: dry-run by default (prints the exact key request, the evidence per capab
 rotation steps; creates nothing); pass --apply to create the key. The secret is printed ONCE and
 never written to a file.
 
-Run: uv run python scripts/create_b2_scoped_key.py           # dry run (default)
-     uv run python scripts/create_b2_scoped_key.py --apply   # actually create the key
+--include-locked additionally covers the Object-Lock checkpoint bucket (B2_BUCKET_LOCKED) and
+grants exactly the two retention capabilities its code paths need, so ONE rotated key serves the
+whole API without degrading the checkpoint surfaces (the recommended rotation shape).
+
+Run: uv run python scripts/create_b2_scoped_key.py                            # dry run (default)
+     uv run python scripts/create_b2_scoped_key.py --apply                    # dev bucket only
+     uv run python scripts/create_b2_scoped_key.py --apply --include-locked   # dev + locked
 """
 
 from __future__ import annotations
@@ -74,6 +79,23 @@ CAPABILITIES: list[tuple[str, str]] = [
     ),
 ]
 
+# (capability, evidence) granted ONLY with --include-locked: the Object-Lock checkpoint bucket's
+# code paths need exactly these two beyond the base list.
+LOCKED_CAPABILITIES: list[tuple[str, str]] = [
+    (
+        "writeFileRetentions",
+        "the checkpoint seal uploads with an explicit compliance FileRetentionSetting "
+        "(packages/storage/rooted_storage/storage.py put(retain_until=...), called by "
+        "rooted_api/checkpoint.py seal_checkpoint)",
+    ),
+    (
+        "readFileRetentions",
+        "storage.retention() reads the object's file_retention back as WORM evidence "
+        "(storage.py retention(), read by rooted_api/checkpoint.py at the seal and history "
+        "surfaces); b2sdk documents this read needs readFileRetentions",
+    ),
+]
+
 # (capability, why it is NOT granted).
 EXCLUDED: list[tuple[str, str]] = [
     (
@@ -82,9 +104,9 @@ EXCLUDED: list[tuple[str, str]] = [
         "caller); the registry is append-only, and lifecycle rules do the byo/ + ingest/ cleanup",
     ),
     (
-        "writeFileRetentions / readFileRetentions",
-        "Object Lock is used only on the LOCKED checkpoint bucket (B2_BUCKET_LOCKED), which this "
-        "key does not cover",
+        "writeFileRetentions / readFileRetentions (without --include-locked)",
+        "Object Lock is used only on the LOCKED checkpoint bucket (B2_BUCKET_LOCKED); a dev-only "
+        "key does not cover it, so the pair is granted only with --include-locked",
     ),
     (
         "writeBuckets / readBucketRetentions / readBucketNotifications / writeBucketNotifications",
@@ -109,24 +131,37 @@ def _env() -> dict[str, str]:
     return out
 
 
-def plan(bucket_name: str) -> dict[str, object]:
+def plan(bucket_name: str, locked_bucket_name: str | None = None) -> dict[str, object]:
     """Pure planning: the exact key request that --apply would send (name, capabilities, bucket
-    restriction, no namePrefix), for printing and for tests."""
+    restriction, no namePrefix), for printing and for tests. With locked_bucket_name the request
+    covers both buckets and adds exactly the two retention capabilities the locked paths need."""
+    caps = [cap for cap, _ in CAPABILITIES]
+    buckets = [bucket_name]
+    if locked_bucket_name is not None:
+        caps += [cap for cap, _ in LOCKED_CAPABILITIES]
+        buckets.append(locked_bucket_name)
     return {
         "keyName": KEY_NAME,
-        "capabilities": [cap for cap, _ in CAPABILITIES],
-        "bucketName": bucket_name,
+        "capabilities": caps,
+        "bucketNames": buckets,
+        "bucketName": bucket_name,  # kept for callers that predate --include-locked
         "namePrefix": None,
     }
 
 
-def _print_plan(bucket_name: str) -> None:
-    request = plan(bucket_name)
+def _print_plan(bucket_name: str, locked_bucket_name: str | None) -> None:
+    request = plan(bucket_name, locked_bucket_name)
     print(f"key to create: {request['keyName']}")
-    print(f"restricted to bucket: {bucket_name} (no namePrefix restriction, see the note below)")
+    print(
+        f"restricted to bucket(s): {', '.join(request['bucketNames'])} "  # type: ignore[arg-type]
+        "(no namePrefix restriction, see the note below)"
+    )
     print("capabilities (each evidence-based):")
     for cap, evidence in CAPABILITIES:
         print(f"  + {cap}: {evidence}")
+    if locked_bucket_name is not None:
+        for cap, evidence in LOCKED_CAPABILITIES:
+            print(f"  + {cap} (locked bucket): {evidence}")
     print("excluded, with reasons:")
     for cap, reason in EXCLUDED:
         print(f"  - {cap}: {reason}")
@@ -137,14 +172,15 @@ def _print_plan(bucket_name: str) -> None:
         "prefixes (assets/, manifests/, signatures/, ingest/), so the restriction is by bucket "
         "only; the byo/ key shape stays enforced server-side (rooted_api/byo.py)."
     )
-    print(
-        "WARNING (locked bucket): the API also uses B2_BUCKET_LOCKED (WORM checkpoints, "
-        "rooted_api/checkpoint.py) through the SAME B2_KEY_ID/B2_APP_KEY. Rotating the env to "
-        "this dev-only key degrades the checkpoint surfaces to their labeled in-memory fallback. "
-        "If that is not acceptable, create the key with BOTH bucket ids instead "
-        "(api.create_key(bucket_ids=[dev, locked]) plus writeFileRetentions + "
-        "readFileRetentions), or keep a second key for the locked bucket."
-    )
+    if locked_bucket_name is None:
+        print(
+            "WARNING (locked bucket): the API also uses B2_BUCKET_LOCKED (WORM checkpoints, "
+            "rooted_api/checkpoint.py) through the SAME B2_KEY_ID/B2_APP_KEY. Rotating the env to "
+            "this dev-only key degrades the checkpoint surfaces to their labeled in-memory "
+            "fallback. If that is not acceptable, re-run with --include-locked (covers both "
+            "buckets plus exactly the two retention capabilities the locked paths need), or keep "
+            "a second key for the locked bucket."
+        )
 
 
 def _print_rotation_steps() -> None:
@@ -162,6 +198,7 @@ def _print_rotation_steps() -> None:
 
 def main() -> None:
     apply = "--apply" in sys.argv[1:]
+    include_locked = "--include-locked" in sys.argv[1:]
     env = _env()
     bucket_name = env["B2_BUCKET_DEV"]
     locked_name = env.get("B2_BUCKET_LOCKED", "rooted-locked")
@@ -176,7 +213,7 @@ def main() -> None:
     allowed = api.account_info.get_allowed()
     print(f"authorized with the parent key; its capabilities: {allowed.get('capabilities')}")
     print()
-    _print_plan(bucket_name)
+    _print_plan(bucket_name, locked_name if include_locked else None)
     print()
     _print_rotation_steps()
     if not apply:
@@ -184,11 +221,12 @@ def main() -> None:
         print("dry run (default): no key was created. Re-run with --apply to create it.")
         return
 
-    bucket = api.get_bucket_by_name(bucket_name)
+    request = plan(bucket_name, locked_name if include_locked else None)
+    bucket_ids = [api.get_bucket_by_name(name).id_ for name in request["bucketNames"]]  # type: ignore[union-attr]
     created = api.create_key(
-        capabilities=[cap for cap, _ in CAPABILITIES],
+        capabilities=request["capabilities"],
         key_name=KEY_NAME,
-        bucket_ids=[bucket.id_],
+        bucket_ids=bucket_ids,
     )
     print()
     print("KEY CREATED. The secret below is shown ONCE; B2 will never show it again.")

@@ -148,9 +148,29 @@ async def test_delete_manifest_is_405_worm_refusal() -> None:
         await _ingest(c, "urn:c2pa:rcpt7", "RR07", 78)
         r = await c.delete("/manifests/urn:c2pa:rcpt7")
     assert r.status_code == 405
+    assert r.headers["allow"] == "GET"  # RFC 9110 requires Allow on a 405
     detail = r.json()["detail"].lower()
     assert "append-only" in detail or "immutable" in detail
     assert "object lock" in detail
+
+
+async def test_delete_receipts_subpath_is_405_with_allow() -> None:
+    # The greedy converter extends the WORM refusal to subpaths; the Allow header must list
+    # the methods the receipts resource actually supports.
+    async with _client() as c:
+        r = await c.delete("/manifests/urn:c2pa:rcpt7/receipts")
+    assert r.status_code == 405
+    assert r.headers["allow"] == "GET, POST"
+
+
+async def test_get_manifest_with_newline_id_is_404_not_405() -> None:
+    # A %0A (newline) in the id fails the GET catch-all's `:path` (.*) regex; if any sibling
+    # route with a default `[^/]+` converter still matches the path, Starlette answers 405,
+    # which the OpenAPI contract does not document for GET. Every /manifests/{id} route must
+    # use the same converter so an unmatchable id falls through to a documented 404.
+    async with _client() as c:
+        r = await c.get("/manifests/%0Anot-a-real-id")
+    assert r.status_code == 404
 
 
 async def test_ingest_return_receipt_includes_manifest_receipt() -> None:

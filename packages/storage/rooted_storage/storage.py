@@ -67,6 +67,7 @@ class Storage(Protocol):
     ) -> str: ...
     def get(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
+    def size(self, key: str) -> int | None: ...
     def delete(self, key: str) -> None: ...
     def retention(self, key: str) -> RetentionInfo | None: ...
     def list_keys(self, prefix: str) -> list[str]: ...
@@ -101,6 +102,11 @@ class InMemoryStorage:
 
     def exists(self, key: str) -> bool:
         return key in self._data
+
+    def size(self, key: str) -> int | None:
+        if key not in self._data:
+            return None
+        return len(self._data[key])
 
     def delete(self, key: str) -> None:
         if key in self._retention:
@@ -157,6 +163,19 @@ class B2Storage:
             # Only "absent" returns False. Connection/auth errors propagate so an outage is never
             # mistaken for a missing object (which would corrupt recovery and overwrite logic).
             return False
+
+    def size(self, key: str) -> int | None:
+        """The object's stored size in bytes, or None when it is absent. Reads only the file info
+        (no download), so a size cap can be enforced before any bytes are fetched. Connection/auth
+        errors propagate, like exists(), so an outage is never mistaken for a missing object."""
+        from b2sdk.v2.exception import FileNotPresent
+
+        try:
+            info = self._bucket.get_file_info_by_name(key)
+        except FileNotPresent:
+            return None
+        size = getattr(info, "size", None)
+        return int(size) if size is not None else None
 
     def delete(self, key: str) -> None:
         info = self._bucket.get_file_info_by_name(key)

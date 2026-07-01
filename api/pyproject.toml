@@ -20,6 +20,10 @@ dependencies = [
     # The Anthropic SDK powers the live provenance agent (/demo/agent), which is opt-in via
     # ANTHROPIC_API_KEY and serves an honest disabled response until a key is set.
     "anthropic>=0.40",
+    # boto3 presigns the direct-to-B2 browser PUT (rooted_api.byo) against the B2 S3-compatible
+    # endpoint. It was already in the environment transitively (genblaze-s3); declared here because
+    # this package imports it directly.
+    "boto3>=1.43,<2",
 ]
 
 [tool.uv.sources]

@@ -84,6 +84,15 @@ def test_missing_key_raises() -> None:
         InMemoryStorage().get("nope")
 
 
+def test_size_reports_bytes_or_none() -> None:
+    # size() is the pre-download cap check for the BYO direct-upload path: a present object reports
+    # its stored byte count without a download, an absent object reports None (never raises).
+    s = InMemoryStorage()
+    s.put("byo/abc.png", b"12345")
+    assert s.size("byo/abc.png") == 5
+    assert s.size("absent") is None
+
+
 def test_key_helpers_are_content_addressable() -> None:
     sha = "ab" + "c" * 62
     assert asset_key(sha) == f"assets/ab/cc/{sha}"

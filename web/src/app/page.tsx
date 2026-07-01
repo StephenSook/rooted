@@ -10,6 +10,7 @@ import { FederationPanel } from "@/components/federation-panel";
 import { GenblazePanel } from "@/components/genblaze-panel";
 import { GeneratePanel } from "@/components/generate-panel";
 import { Hero } from "@/components/hero";
+import { IntegrityClashPanel } from "@/components/integrity-clash-panel";
 import { LineagePanel } from "@/components/lineage-panel";
 import { ProvidersPanel } from "@/components/providers-panel";
 import { RebuildPanel } from "@/components/rebuild-panel";
@@ -89,6 +90,7 @@ export default function Home() {
         />
         <ContentCredentials />
         <TamperPanel />
+        <IntegrityClashPanel />
         <LineagePanel />
         <ReceiptPanel />
         <SupportedAlgorithms />

@@ -124,7 +124,7 @@ describe("ByoUploadPanel", () => {
     selectFile(container, new File(["png"], "mine.png", { type: "image/png" }));
 
     expect(
-      await screen.findByText(/bucket CORS rule not applied yet.*registration flow are unaffected/),
+      await screen.findByText(/blocked in the browser.*registration flow are unaffected/),
     ).toBeTruthy();
     // Stage 1 completed for real, stage 2 failed, and register was never attempted.
     expect(screen.getAllByText("✓ done")).toHaveLength(1);

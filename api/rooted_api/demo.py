@@ -19,16 +19,21 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
+import anyio
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from PIL import Image
 
+from rooted_api.dedup import counters as dedup_counters
+from rooted_api.dedup import put_if_absent
 from rooted_provenance.audio import audio_to_image
 from rooted_provenance.fingerprint import compute_pdq, hamming
 from rooted_provenance.merkle import TransparencyLog
@@ -47,6 +52,7 @@ from rooted_provenance.watermark import FakeWatermarker
 from rooted_storage.storage import (
     MANIFEST_PREFIX,
     B2Storage,
+    BucketProperties,
     Storage,
     asset_key,
     manifest_key,
@@ -57,6 +63,7 @@ DEMO_MANIFEST_ID = "urn:c2pa:demo-0000-0000-0000-000000000001"
 DEMO_WATERMARK_ID = "DEMO"
 _CREATED_AT = "2026-06-27T00:00:00Z"
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 _sample_bytes: bytes | None = None
 
@@ -185,6 +192,19 @@ def demo_sample_bytes() -> bytes:
     return _sample_bytes
 
 
+def _put_signature(storage: Storage, manifest_id: str, sig: bytes) -> None:
+    """Store the COSE signature, dedup-skipping the re-upload only under a pinned key: the
+    signature bytes are byte-stable across restarts only when the signing key is configured. An
+    ephemeral dev/CI key must overwrite, so the stored signature always verifies against the
+    currently published public key."""
+    from rooted_api.sbr import key_source  # local import: avoid a module-load cycle
+
+    if key_source() == "configured":
+        put_if_absent(storage, signature_key(manifest_id), sig)
+    else:
+        storage.put(signature_key(manifest_id), sig)
+
+
 def _register(
     resolver: Resolver,
     log: TransparencyLog,
@@ -206,10 +226,12 @@ def _register(
     log.append(manifest.manifest_id, manifest.canonical_hash())
     if storage is not None:
         # Store the asset, its canonical manifest, and its COSE signature content-addressably, so
-        # the live demo writes real objects to Backblaze B2 (the recovery repository).
-        storage.put(asset_key(manifest.asset_sha256), image_bytes)
-        storage.put(manifest_key(manifest_id), canonical_json(manifest.model_dump()))
-        storage.put(signature_key(manifest_id), sign_manifest(manifest, signing_key))
+        # the live demo writes real objects to Backblaze B2 (the recovery repository). A restart
+        # re-seeds identical bytes under the same keys, so an existing object skips the re-upload
+        # (counted as dedup evidence in GET /demo/storage).
+        put_if_absent(storage, asset_key(manifest.asset_sha256), image_bytes)
+        put_if_absent(storage, manifest_key(manifest_id), canonical_json(manifest.model_dump()))
+        _put_signature(storage, manifest_id, sign_manifest(manifest, signing_key))
 
 
 def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None = None) -> None:
@@ -275,11 +297,11 @@ def seed_audio_demo(
     if log.index_for(manifest.manifest_id) is None:
         log.append(manifest.manifest_id, manifest.canonical_hash())
     if storage is not None:
-        storage.put(asset_key(manifest.asset_sha256), audio_bytes)
-        storage.put(manifest_key(DEMO_AUDIO_MANIFEST_ID), canonical_json(manifest.model_dump()))
-        storage.put(
-            signature_key(DEMO_AUDIO_MANIFEST_ID), sign_manifest(manifest, sbr._signing_key)
+        put_if_absent(storage, asset_key(manifest.asset_sha256), audio_bytes)
+        put_if_absent(
+            storage, manifest_key(DEMO_AUDIO_MANIFEST_ID), canonical_json(manifest.model_dump())
         )
+        _put_signature(storage, DEMO_AUDIO_MANIFEST_ID, sign_manifest(manifest, sbr._signing_key))
 
 
 def seed_video_demo(
@@ -308,11 +330,11 @@ def seed_video_demo(
     if log.index_for(manifest.manifest_id) is None:
         log.append(manifest.manifest_id, manifest.canonical_hash())
     if storage is not None:
-        storage.put(asset_key(manifest.asset_sha256), video_bytes)
-        storage.put(manifest_key(DEMO_VIDEO_MANIFEST_ID), canonical_json(manifest.model_dump()))
-        storage.put(
-            signature_key(DEMO_VIDEO_MANIFEST_ID), sign_manifest(manifest, sbr._signing_key)
+        put_if_absent(storage, asset_key(manifest.asset_sha256), video_bytes)
+        put_if_absent(
+            storage, manifest_key(DEMO_VIDEO_MANIFEST_ID), canonical_json(manifest.model_dump())
         )
+        _put_signature(storage, DEMO_VIDEO_MANIFEST_ID, sign_manifest(manifest, sbr._signing_key))
 
 
 # --- Multi-provider provenance demos: real generations from several distinct labs (via kie.ai), ---
@@ -490,10 +512,147 @@ async def demo_signed_manifest() -> dict[str, Any]:
     }
 
 
+# --- The b2Depth section of GET /demo/storage: evidence-based B2 configuration state. Every value
+# is a live read from the bucket or a real in-process counter; anything unreadable is reported as
+# unknown (read=false / null), never asserted from config or docs.
+
+
+class DedupCounters(CamelModel):
+    """Real, in-process dedup events counted since process start (never persisted; a restart resets
+    them to zero). exists_skips counts writes skipped because the content-addressed object already
+    exists; idempotent_registers counts register calls answered from the existing record."""
+
+    exists_skips: int
+    idempotent_registers: int
+    since: str
+    note: str
+
+
+class BucketEncryption(CamelModel):
+    """The bucket's default server-side encryption, read live from B2. read is false when it could
+    not be read (no B2 backend, a key without readBucketEncryption, a timeout, or an outage); mode
+    and algorithm are then null, never guessed. mode "none" is a successful read of an unencrypted
+    default."""
+
+    read: bool
+    mode: str | None
+    algorithm: str | None
+
+
+class BucketLifecycle(CamelModel):
+    """The bucket's lifecycle rules, read live from B2. read is false when they could not be read
+    (rules is then null). byo_rule_active / ingest_rule_active report whether a delete rule covers
+    that prefix right now (null when unread)."""
+
+    read: bool
+    rules: list[dict[str, Any]] | None
+    byo_rule_active: bool | None
+    ingest_rule_active: bool | None
+
+
+class B2Depth(CamelModel):
+    """Evidence-based B2 configuration state for the demo storage panel."""
+
+    backend: str
+    bucket: str | None
+    default_encryption: BucketEncryption
+    lifecycle: BucketLifecycle
+    dedup: DedupCounters
+    note: str
+
+
+_BUCKET_PROPS_TTL_SECONDS = 30.0
+_BUCKET_PROPS_TIMEOUT_SECONDS = 4.0
+_bucket_props_cache: tuple[float, BucketProperties] | None = None
+
+
+def reset_bucket_props_cache() -> None:
+    """Clear the cached bucket-properties read (tests, or to force a fresh read)."""
+    global _bucket_props_cache
+    _bucket_props_cache = None
+
+
+def _cached_bucket_properties(storage: B2Storage) -> BucketProperties:
+    """Read the bucket's live properties (one b2_list_buckets round trip), cached briefly so a
+    burst on /demo/storage cannot hammer B2's class-C API. Synchronous: run in a threadpool."""
+    global _bucket_props_cache
+    now = time.monotonic()
+    if _bucket_props_cache is not None and now - _bucket_props_cache[0] < _BUCKET_PROPS_TTL_SECONDS:
+        return _bucket_props_cache[1]
+    props = storage.properties()
+    _bucket_props_cache = (now, props)
+    return props
+
+
+def _lifecycle_rule_active(rules: list[dict[str, Any]], prefix: str) -> bool:
+    """Whether a live-read lifecycle rule deletes objects under the prefix (a hiding or a deleting
+    window is set)."""
+    return any(
+        r.get("fileNamePrefix") == prefix
+        and (r.get("daysFromUploadingToHiding") or r.get("daysFromHidingToDeleting"))
+        for r in rules
+    )
+
+
+async def _b2_depth(storage: Storage | None, backend: str, bucket: str | None) -> B2Depth:
+    """Build the b2Depth section. The bucket's default encryption and lifecycle rules are read LIVE
+    from B2 (threadpool, short timeout, brief cache) and degrade to unknown on any failure, never a
+    500. The dedup counters are real in-process events regardless of backend."""
+    props: BucketProperties | None = None
+    if isinstance(storage, B2Storage):
+        try:
+            # abandon_on_cancel: on timeout the blocked read is abandoned (its result discarded)
+            # and the panel reports unknown instead of hanging the response.
+            with anyio.move_on_after(_BUCKET_PROPS_TIMEOUT_SECONDS):
+                props = await anyio.to_thread.run_sync(
+                    _cached_bucket_properties, storage, abandon_on_cancel=True
+                )
+        except Exception as exc:  # noqa: BLE001 - degrade to unknown, never 500 the demo panel
+            logger.warning("b2Depth: live bucket-properties read failed: %s", exc)
+    encryption = BucketEncryption(
+        read=props is not None and props.default_encryption_mode is not None,
+        mode=props.default_encryption_mode if props else None,
+        algorithm=props.default_encryption_algorithm if props else None,
+    )
+    if props is not None:
+        rules: list[dict[str, Any]] | None = [dict(r) for r in props.lifecycle_rules]
+    else:
+        rules = None
+    lifecycle = BucketLifecycle(
+        read=rules is not None,
+        rules=rules,
+        byo_rule_active=_lifecycle_rule_active(rules, "byo/") if rules is not None else None,
+        ingest_rule_active=_lifecycle_rule_active(rules, "ingest/") if rules is not None else None,
+    )
+    exists_skips, idempotent_registers, since = dedup_counters()
+    dedup = DedupCounters(
+        exists_skips=exists_skips,
+        idempotent_registers=idempotent_registers,
+        since=since,
+        note=(
+            "in-process counts since process start; reset on restart, never persisted or "
+            "extrapolated"
+        ),
+    )
+    return B2Depth(
+        backend=backend,
+        bucket=bucket,
+        default_encryption=encryption,
+        lifecycle=lifecycle,
+        dedup=dedup,
+        note=(
+            "every value here is a live read from the bucket or a real in-process counter; "
+            "unknown (read=false / null) means not readable right now, not a claim"
+        ),
+    )
+
+
 @router.get("/demo/storage", include_in_schema=False)
 async def demo_storage() -> dict[str, Any]:
     """Report where the primary demo asset is stored, and confirm the objects exist (a real read
-    against B2 when configured). Drives the UI's "stored on Backblaze B2" panel."""
+    against B2 when configured), plus the b2Depth section: the bucket's live default-encryption and
+    lifecycle state and the in-process dedup counters. Drives the UI's "stored on Backblaze B2"
+    panel."""
     from rooted_api.sbr import get_storage
     from rooted_storage.storage import B2Storage
 
@@ -505,16 +664,25 @@ async def demo_storage() -> dict[str, Any]:
         "signature": signature_key(DEMO_MANIFEST_ID),
     }
     if storage is None:
+        depth = await _b2_depth(None, "none", None)
         return {
             "backend": "none",
             "bucket": None,
             "keys": keys,
             "present": dict.fromkeys(keys, False),
+            "b2Depth": depth.model_dump(by_alias=True),
         }
     backend = "backblaze-b2" if isinstance(storage, B2Storage) else "in-memory"
     bucket = os.environ.get("B2_BUCKET_DEV") if backend == "backblaze-b2" else None
     present = {name: storage.exists(k) for name, k in keys.items()}
-    return {"backend": backend, "bucket": bucket, "keys": keys, "present": present}
+    depth = await _b2_depth(storage, backend, bucket)
+    return {
+        "backend": backend,
+        "bucket": bucket,
+        "keys": keys,
+        "present": present,
+        "b2Depth": depth.model_dump(by_alias=True),
+    }
 
 
 class RobustnessRow(CamelModel):

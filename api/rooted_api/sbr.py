@@ -23,8 +23,8 @@ import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-from urllib.parse import urlparse
+from typing import Any, Literal
+from urllib.parse import quote, urlparse
 
 import anyio
 import httpx
@@ -32,12 +32,14 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
+from pydantic import Field
+from pymerkle import MerkleProof
 from starlette.concurrency import run_in_threadpool
 
 from rooted_provenance.audio import AudioDecodeError, audio_to_image
-from rooted_provenance.merkle import TransparencyLog
+from rooted_provenance.merkle import TransparencyLog, verify_checkpoint
 from rooted_provenance.models import (
     ALG_TRUSTMARK_P,
     CamelModel,
@@ -450,6 +452,88 @@ def _validate_id(value: str, field: str) -> None:
         raise HTTPException(status_code=400, detail=f"invalid {field}")
 
 
+# --- C2PA SBR 2.4 proof-of-ingestion receipts (spec.c2pa.org .../2.4/softbinding/Decoupled) -------
+# A receipt is the spec-shaped, portable wrapper around Rooted's existing Merkle inclusion proof: it
+# states that a manifest was ingested into this repository and carries the real, independently
+# verifiable proof as its anchor.proof. The receipt routes reuse the SAME proof the
+# /transparency/proof route returns (see _inclusion_proof), so a receipt is never a re-derived or
+# fabricated proof.
+_RECEIPT_TYPE: Literal["org.c2pa.manifest-receipt"] = "org.c2pa.manifest-receipt"
+_RECEIPT_CONTEXT: dict[str, str] = {
+    "c2pa": "https://c2pa.org/ns/",
+    "receipt": "https://c2pa.org/ns/manifest-receipt#",
+}
+
+
+class ReceiptRepository(CamelModel):
+    """The repository that ingested the manifest: its base URI and the canonical manifest id."""
+
+    uri: str
+    manifest_id: str
+
+
+class ReceiptAnchor(CamelModel):
+    """Where and how the ingestion proof is retrieved and verified. proof is repository-specific
+    (the spec marks it additionalProperties true), so Rooted's Merkle inclusion proof is conformant:
+    it carries the hash alg, the leaf, the tree head, the audit path, and the signed checkpoint."""
+
+    uri: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    proof: dict[str, Any]
+
+
+class ManifestReceipt(CamelModel):
+    """A C2PA SBR 2.4 c2pa.manifestReceipt: portable proof a manifest was ingested into this
+    repository. @context and @type carry the @ literally (FastAPI serializes by alias)."""
+
+    context: dict[str, str] | str = Field(
+        default_factory=lambda: dict(_RECEIPT_CONTEXT), alias="@context"
+    )
+    type_: Literal["org.c2pa.manifest-receipt"] = Field(default=_RECEIPT_TYPE, alias="@type")
+    repository: ReceiptRepository
+    anchor: ReceiptAnchor
+
+
+class VerifiedManifestReceipt(ManifestReceipt):
+    """A c2pa.verifiedManifestReceipt: a manifestReceipt plus the result of verifying it against the
+    transparency log. verified is the real check (the inclusion proof recomputes to the signed root
+    and the checkpoint signature verifies under the public key); error states why a verification
+    failed, and is omitted when verified is true."""
+
+    verified: bool
+    error: str | None = None
+
+
+class ManifestCreateResult(CamelModel):
+    """A c2pa.manifestCreateResult: the ingested manifest id, plus the receipt when it was requested
+    via returnReceipt. receipt is omitted otherwise, so the default ingest response is unchanged."""
+
+    manifest_id: str
+    receipt: ManifestReceipt | None = None
+
+
+# Lenient input shapes for POST verifyReceipt: a caller submits a receipt to be checked, so the
+# fields are optional here and the verdict (including a wrong @type or a mismatched id) is reported
+# as verified=false with an error, not rejected at parse time. A body missing the required receipt
+# fields is a malformed body (400).
+class ReceiptRepositoryInput(CamelModel):
+    uri: str | None = None
+    manifest_id: str | None = None
+
+
+class ReceiptAnchorInput(CamelModel):
+    uri: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    proof: dict[str, Any] | None = None
+
+
+class ManifestReceiptInput(CamelModel):
+    context: dict[str, Any] | str | None = Field(default=None, alias="@context")
+    type_: str | None = Field(default=None, alias="@type")
+    repository: ReceiptRepositoryInput | None = None
+    anchor: ReceiptAnchorInput | None = None
+
+
 @router.get("/services/supportedAlgorithms", response_model=SupportedAlgorithms)
 async def supported_algorithms() -> SupportedAlgorithms:
     # Advertise the configured federation peers so the SBR network is discoverable from the spec
@@ -459,6 +543,8 @@ async def supported_algorithms() -> SupportedAlgorithms:
 
 @router.post(
     "/ingest",
+    response_model=ManifestCreateResult,
+    response_model_exclude_none=True,
     responses={
         400: {"description": "malformed request body"},
         401: {"description": "invalid or missing ingest credential"},
@@ -469,18 +555,35 @@ async def supported_algorithms() -> SupportedAlgorithms:
     },
 )
 async def ingest(
+    request: Request,
     file: UploadFile = File(...),
     manifest_id: str = Form(...),
     watermark_id: str = Form(...),
     model: str = Form("unknown"),
     x_ingest_key: str | None = Header(default=None, alias="X-Ingest-Key"),
-) -> dict[str, str]:
+    # Typed bool (not bool | None) with a False default so the OpenAPI query param is a non-nullable
+    # optional boolean: the schemathesis contract test never feeds it the literal "null". Absent or
+    # false leaves the response as {"manifestId": ...} (full back-compat); true adds the receipt.
+    return_receipt: bool = Query(
+        default=False,
+        alias="returnReceipt",
+        description=(
+            "C2PA SBR optional param: when true, include the manifest receipt so the response "
+            "matches c2pa.manifestCreateResult. The receipt is also retrievable at "
+            "GET /manifests/{manifestId}/receipts."
+        ),
+    ),
+) -> ManifestCreateResult:
     """Trusted generation-side ingest, gated by ROOTED_INGEST_KEY (the X-Ingest-Key header; required
     in production). The public query surface is /matches/*.
 
     The asset hash is computed from the uploaded bytes, never taken from the client. An existing
     manifest id is not overwritten (409), and a watermark id already bound to a manifest cannot be
     re-pointed (409), so a second ingest cannot poison recovery for a victim's watermark.
+
+    The log append is synchronous, so when returnReceipt is true the manifest is already a leaf and
+    the receipt (its real inclusion proof) is returned inline; otherwise the response is just the
+    manifest id, unchanged.
     """
     _check_ingest_auth(x_ingest_key)
     _validate_id(manifest_id, "manifest_id")
@@ -513,7 +616,10 @@ async def ingest(
         raise HTTPException(
             status_code=500, detail="manifest registered but transparency log append failed"
         ) from exc
-    return {"manifestId": manifest_id}
+    if return_receipt:
+        receipt = await run_in_threadpool(_manifest_receipt, manifest_id, _self_base_url(request))
+        return ManifestCreateResult(manifest_id=manifest_id, receipt=receipt)
+    return ManifestCreateResult(manifest_id=manifest_id)
 
 
 def _cap_matches(result: SoftBindingQueryResult, max_results: int | None) -> SoftBindingQueryResult:
@@ -764,6 +870,253 @@ async def demo_federation() -> FederationStatus:
     return FederationStatus(enabled=bool(peers), peers=peers, note=note)
 
 
+# --- Receipt construction: reuse the EXISTING inclusion proof, never re-derive the Merkle math ---
+
+
+def _self_base_url(request: Request) -> str:
+    """Rooted's public base URL, for the receipt repository + anchor URIs. Prefers ROOTED_PUBLIC_URL
+    (set it behind a proxy so the URIs name the public host), else the incoming request's base URL.
+    No literal domain is hardcoded."""
+    configured = os.environ.get("ROOTED_PUBLIC_URL")
+    if configured:
+        return configured.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+def _inclusion_proof(manifest_id: str) -> InclusionProofResponse | None:
+    """The inclusion proof for a manifest (the SAME proof GET /transparency/proof returns), or None
+    when the manifest is not a leaf in the transparency log. signed_proof computes the proof, the
+    root, and the signed checkpoint under one lock, so they describe one tree state. Synchronous:
+    run in a threadpool."""
+    log = get_log()
+    index = log.index_for(manifest_id)
+    manifest = _lookup_manifest(manifest_id)
+    if index is None or manifest is None:
+        return None
+    size, root, proof, checkpoint, verified = log.signed_proof(
+        index, _signing_key, datetime.now(UTC).isoformat()
+    )
+    return InclusionProofResponse(
+        manifest_id=manifest_id,
+        # index is the pymerkle 1-based position; the response field is 0-based to agree with
+        # GET /transparency/log, so a client can cross-reference the two.
+        leaf_index=index - 1,
+        leaf_hash=manifest.canonical_hash(),
+        tree_size=size,
+        root_hash=root.hex(),
+        proof=proof.serialize(),
+        checkpoint=checkpoint,
+        public_key_hex=_public_key_hex(),
+        key_source=_key_source,
+        server_verified=verified,
+    )
+
+
+def _receipt_parts(
+    manifest_id: str, inclusion: InclusionProofResponse, base_url: str
+) -> tuple[ReceiptRepository, ReceiptAnchor, bool]:
+    """Map Rooted's real inclusion proof onto the receipt repository + anchor, and compute the real
+    verified flag: the inclusion proof recomputes to the signed root (server_verified) AND the
+    checkpoint signature verifies under the public key. anchor.proof is the exact proof payload
+    GET /transparency/proof returns, with the hash alg labeled; the spec marks anchor.proof
+    additionalProperties true, so a repository-specific Merkle proof is conformant."""
+    base = base_url.rstrip("/")
+    proof_obj: dict[str, Any] = {"alg": "sha256", **inclusion.model_dump(by_alias=True)}
+    repository = ReceiptRepository(uri=base, manifest_id=manifest_id)
+    anchor = ReceiptAnchor(
+        uri=f"{base}/transparency/proof/{quote(manifest_id, safe='')}",
+        parameters={"epoch": inclusion.checkpoint.epoch},
+        proof=proof_obj,
+    )
+    verified = inclusion.server_verified and verify_checkpoint(
+        inclusion.checkpoint, _signing_key.public_key()
+    )
+    return repository, anchor, verified
+
+
+def _manifest_receipt(manifest_id: str, base_url: str) -> ManifestReceipt | None:
+    """The c2pa.manifestReceipt for a manifest (no verification verdict), or None when it is not in
+    the transparency log. Synchronous: run in a threadpool."""
+    inclusion = _inclusion_proof(manifest_id)
+    if inclusion is None:
+        return None
+    repository, anchor, _ = _receipt_parts(manifest_id, inclusion, base_url)
+    return ManifestReceipt(repository=repository, anchor=anchor)
+
+
+def _verified_receipt(manifest_id: str, base_url: str) -> VerifiedManifestReceipt | None:
+    """The c2pa.verifiedManifestReceipt for a manifest (with the real verified verdict), or None if
+    it is not in the transparency log. Synchronous: run in a threadpool."""
+    inclusion = _inclusion_proof(manifest_id)
+    if inclusion is None:
+        return None
+    repository, anchor, verified = _receipt_parts(manifest_id, inclusion, base_url)
+    return VerifiedManifestReceipt(
+        repository=repository, anchor=anchor, verified=verified, error=None
+    )
+
+
+def _proof_matches(
+    supplied: dict[str, Any], inclusion: InclusionProofResponse
+) -> tuple[bool, str | None]:
+    """Re-run Rooted's real Merkle verification on a SUPPLIED proof and compare it to the current
+    inclusion proof and signed root, rather than trusting any flag inside the supplied object. Any
+    malformed or non-matching field yields (False, reason); a fully matching, valid proof yields
+    (True, None)."""
+    if supplied.get("leafHash") != inclusion.leaf_hash:
+        return False, "proof leaf hash does not match the manifest canonical hash"
+    if supplied.get("leafIndex") != inclusion.leaf_index:
+        return False, "proof leaf index does not match the current leaf index"
+    if supplied.get("treeSize") != inclusion.tree_size:
+        return False, "proof tree size does not match the current tree size"
+    if supplied.get("rootHash") != inclusion.root_hash:
+        return False, "proof root hash does not match the current signed root"
+    try:
+        checkpoint = MerkleCheckpoint.model_validate(supplied.get("checkpoint"))
+        if not verify_checkpoint(checkpoint, _signing_key.public_key()):
+            return False, "checkpoint signature does not verify under the repository public key"
+        if checkpoint.root_hash != inclusion.root_hash:
+            return False, "checkpoint root does not match the current signed root"
+        resolved = MerkleProof.deserialize(supplied.get("proof")).resolve()
+        if resolved != bytes.fromhex(inclusion.root_hash):
+            return False, "merkle audit path does not resolve to the signed root"
+    except Exception as exc:  # noqa: BLE001 - a malformed/forged proof is a verdict, never a 500
+        logger.info("verifyReceipt: supplied proof did not verify: %s", exc)
+        return False, "proof is malformed or does not verify"
+    return True, None
+
+
+def _verify_receipt_against_log(
+    manifest_id: str, payload: ManifestReceiptInput
+) -> VerifiedManifestReceipt:
+    """Verify a submitted receipt against this repository's transparency log for manifest_id. Echoes
+    the submitted repository/anchor with the honest verdict. A body missing the required receipt
+    fields is a malformed body (400)."""
+    repo = payload.repository
+    anchor = payload.anchor
+    if repo is None or anchor is None:
+        raise HTTPException(status_code=400, detail="malformed manifest receipt body")
+    repo_uri = repo.uri
+    repo_mid = repo.manifest_id
+    anchor_uri = anchor.uri
+    anchor_proof = anchor.proof
+    if not repo_uri or not repo_mid or not anchor_uri or anchor_proof is None:
+        raise HTTPException(status_code=400, detail="malformed manifest receipt body")
+    out_repo = ReceiptRepository(uri=repo_uri, manifest_id=repo_mid)
+    out_anchor = ReceiptAnchor(uri=anchor_uri, parameters=anchor.parameters, proof=anchor_proof)
+
+    verified = True
+    error: str | None = None
+    if repo_mid != manifest_id:
+        verified = False
+        error = "receipt repository manifestId does not match the requested manifest"
+    elif payload.type_ != _RECEIPT_TYPE:
+        verified = False
+        error = "unexpected receipt @type (want org.c2pa.manifest-receipt)"
+    else:
+        inclusion = _inclusion_proof(manifest_id)
+        if inclusion is None:
+            verified = False
+            error = "manifest is not in the transparency log"
+        else:
+            verified, error = _proof_matches(anchor_proof, inclusion)
+    return VerifiedManifestReceipt(
+        repository=out_repo, anchor=out_anchor, verified=verified, error=error
+    )
+
+
+def _demo_receipt(base_url: str) -> VerifiedManifestReceipt:
+    """The verified receipt for the primary demo manifest, the first logged manifest as a fallback,
+    or a labeled empty state when the log is empty. Never raises."""
+    from rooted_api.demo import DEMO_MANIFEST_ID  # local import: avoid a module-load cycle
+
+    entries, _size, _root = get_log().snapshot()
+    ids = [mid for _idx, mid, _hash in entries]
+    target = DEMO_MANIFEST_ID if DEMO_MANIFEST_ID in ids else (ids[0] if ids else None)
+    if target is not None:
+        receipt = _verified_receipt(target, base_url)
+        if receipt is not None:
+            return receipt
+    base = base_url.rstrip("/")
+    return VerifiedManifestReceipt(
+        repository=ReceiptRepository(uri=base, manifest_id=""),
+        anchor=ReceiptAnchor(uri=f"{base}/transparency/log", parameters={}, proof={}),
+        verified=False,
+        error="no manifest is available in the transparency log yet",
+    )
+
+
+# Registered BEFORE the catch-all GET /manifests/{manifest_id:path} so the greedy :path converter
+# does not shadow these more specific routes.
+@router.get(
+    "/manifests/{manifest_id}/receipts",
+    response_model=VerifiedManifestReceipt,
+    response_model_exclude_none=True,
+    operation_id="getVerifiedReceipt",
+    responses={404: {"description": "manifest not in the transparency log (not ingested)"}},
+)
+async def get_verified_receipt(manifest_id: str, request: Request) -> VerifiedManifestReceipt:
+    """A C2PA SBR 2.4 verified manifest receipt: portable, independently verifiable proof that this
+    manifest was ingested into this repository, built from Rooted's real Merkle inclusion proof. 404
+    when the manifest is not a leaf in the transparency log."""
+    receipt = await run_in_threadpool(_verified_receipt, manifest_id, _self_base_url(request))
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="manifest not in the transparency log")
+    return receipt
+
+
+@router.post(
+    "/manifests/{manifest_id}/receipts",
+    response_model=VerifiedManifestReceipt,
+    response_model_exclude_none=True,
+    operation_id="verifyReceipt",
+    responses={400: {"description": "malformed manifest receipt body"}},
+)
+async def verify_receipt(
+    manifest_id: str, payload: ManifestReceiptInput
+) -> VerifiedManifestReceipt:
+    """Verify a submitted c2pa.manifestReceipt against this repository transparency log for the path
+    manifest. The verdict is honest: verified=false with an error when the receipt repository
+    manifestId mismatches the path, the @type is wrong, the manifest is not in the log, or the
+    supplied proof does not validate against the current inclusion proof and signed root. A body
+    missing the required receipt fields is a malformed body (400)."""
+    return await run_in_threadpool(_verify_receipt_against_log, manifest_id, payload)
+
+
+@router.delete(
+    "/manifests/{manifest_id}",
+    operation_id="deleteManifestRefused",
+    status_code=405,
+    responses={405: {"description": "append-only WORM registry: manifests cannot be deleted"}},
+)
+async def delete_manifest(manifest_id: str) -> None:
+    """Refused by design. This registry is append-only and WORM-backed (Backblaze B2 Object Lock):
+    every manifest is sealed into the transparency log and a signed checkpoint, so manifests are
+    immutable and cannot be deleted. Rooted likewise does not implement the spec PUT /bindings
+    mutation route. This is a deliberate, honest conformance statement, not a missing feature."""
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "manifests are immutable: this registry is append-only and WORM-backed by Backblaze B2 "
+            "Object Lock, so a manifest cannot be deleted. Rooted also does not implement the spec "
+            "PUT /bindings mutation route, by design."
+        ),
+    )
+
+
+@router.get(
+    "/demo/receipt",
+    response_model=VerifiedManifestReceipt,
+    response_model_exclude_none=True,
+    include_in_schema=False,
+)
+async def demo_receipt(request: Request) -> VerifiedManifestReceipt:
+    """The verified manifest receipt for the primary demo manifest, for a UI panel. Degrades to the
+    first manifest in the log when the primary is absent, and to a clear empty state when the log is
+    empty, never 500."""
+    return await run_in_threadpool(_demo_receipt, _self_base_url(request))
+
+
 @router.get(
     "/manifests/{manifest_id:path}",
     response_model=Manifest,
@@ -907,32 +1260,13 @@ async def transparency_checkpoint() -> CheckpointResponse:
 )
 async def transparency_proof(manifest_id: str) -> InclusionProofResponse:
     """An inclusion proof for a manifest, pinned to a signed checkpoint so the client can bind the
-    leaf to a signed tree head without trusting this endpoint."""
-    log = get_log()
-    index = log.index_for(manifest_id)
-    manifest = await run_in_threadpool(_lookup_manifest, manifest_id)
-    if index is None or manifest is None:
+    leaf to a signed tree head without trusting this endpoint. _inclusion_proof is the same builder
+    the receipt routes reuse, so a receipt anchor.proof is exactly this payload. It runs off the
+    event loop (CPU-bound proof + a blocking index read)."""
+    proof = await run_in_threadpool(_inclusion_proof, manifest_id)
+    if proof is None:
         raise HTTPException(status_code=404, detail="manifest not in transparency log")
-    # signed_proof computes the proof, the root, and the signed checkpoint under one lock, so the
-    # proof's root and the checkpoint's root describe the same tree state (no divergence under a
-    # concurrent append) and the CPU-bound proof runs off the event loop.
-    size, root, proof, checkpoint, verified = await run_in_threadpool(
-        log.signed_proof, index, _signing_key, datetime.now(UTC).isoformat()
-    )
-    return InclusionProofResponse(
-        manifest_id=manifest_id,
-        # index is the pymerkle 1-based position (used for prove/verify); the response field is
-        # 0-based to agree with GET /transparency/log, so a client can cross-reference the two.
-        leaf_index=index - 1,
-        leaf_hash=manifest.canonical_hash(),
-        tree_size=size,
-        root_hash=root.hex(),
-        proof=proof.serialize(),
-        checkpoint=checkpoint,
-        public_key_hex=_public_key_hex(),
-        key_source=_key_source,
-        server_verified=verified,
-    )
+    return proof
 
 
 @router.get(

@@ -6,11 +6,18 @@ input triggers a server error. This proves the SBR API is self-consistent with t
 typed front-end client and the MCP server are generated against. It runs in-process against the ASGI
 app (no network, no credentials), derandomized so results are stable across machines and CI runs.
 
-The two multipart file-upload operations (POST /ingest, POST /matches/byContent) are excluded: their
+The multipart file-upload operations (POST /ingest, POST /matches/byContent) are excluded: their
 real input is binary image content, which OpenAPI's binary type cannot model, so schemathesis can
 only exercise framework-level body-parsing errors rather than the actual contract. Their response
 schemas (SoftBindingQueryResult and the ingest ack) are the same models validated on the GET surface
-and exercised directly in the unit tests.
+and exercised directly in the unit tests. POST /manifests/{id}/receipts (verifyReceipt) is excluded
+for the same reason: its real input is a structured receipt verified against the live log, covered
+directly in the receipt unit tests.
+
+DELETE /manifests/{id} is excluded too: it is an intentional, always-405 WORM-refusal (the registry
+is append-only and Object-Lock-backed), a deliberate conformance statement with no positive contract
+to fuzz, so the positive-data check has nothing meaningful to assert. The 405 behavior is verified
+in the receipt unit tests. The route stays in the published OpenAPI surface.
 """
 
 from __future__ import annotations
@@ -27,7 +34,11 @@ from rooted_api.main import create_app
 # it). The MCP mount is not part of the OpenAPI surface, so the SBR contract under test is the same.
 app = create_app(mount_mcp=False)
 
-schema = schemathesis.openapi.from_asgi("/openapi.json", app).exclude(method="POST")
+schema = (
+    schemathesis.openapi.from_asgi("/openapi.json", app)
+    .exclude(method="POST")
+    .exclude(method="DELETE")
+)
 
 
 @schema.parametrize()

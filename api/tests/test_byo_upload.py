@@ -182,6 +182,22 @@ async def test_register_404_when_object_missing(storage: InMemoryStorage) -> Non
     assert r.status_code == 404
 
 
+async def test_register_502_when_storage_download_errors(
+    storage: InMemoryStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The object passed the size check (it exists), but the download itself fails with a storage
+    # OUTAGE (not a missing object). That must surface as 502, never a dishonest 404.
+    storage.put(_VALID_KEY, _png(41))
+
+    def failing_get(key: str) -> bytes:
+        raise ConnectionError("b2 unreachable")
+
+    monkeypatch.setattr(storage, "get", failing_get)
+    async with _client() as c:
+        r = await c.post("/demo/byo/register", json={"objectKey": _VALID_KEY})
+    assert r.status_code == 502
+
+
 async def test_register_413_when_stored_object_oversized(
     storage: InMemoryStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:

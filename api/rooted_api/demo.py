@@ -500,8 +500,8 @@ async def demo_video() -> Response:
 @router.get("/demo/signed-manifest", include_in_schema=False)
 async def demo_signed_manifest() -> dict[str, Any]:
     """The primary demo manifest, its COSE signature (signed with the server's checkpoint key), and
-    the public key. The UI lets a judge edit a field and POST it to /verify; any change to a signed
-    field flips the signature invalid, demonstrating tamper-evidence live."""
+    the public key. The tamper panel lets a judge edit a field and POST it to /demo/tamper-diff; any
+    change to a signed field flips the signature invalid, demonstrating tamper-evidence live."""
     from rooted_api import sbr
 
     manifest = primary_manifest()

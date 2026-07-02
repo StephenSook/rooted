@@ -74,12 +74,18 @@ _PRIMARY_PROMPT = (
     "a single rooted oak tree on a floating island in a deep blue starfield, "
     "cinematic, photorealistic"
 )
+# system_provenance is disclosed on recovery. The generation prompt is PERSONAL provenance and is
+# withheld by the redaction layer, so it lives in personal_provenance (which the canonical payload
+# and the signature EXCLUDE), exactly like a visitor's own prompt in POST /demo/generate. Keeping it
+# out of system_provenance is what makes the disclosed (redacted) manifest hash identical to its
+# transparency-log leaf: a prompt in system_provenance would be in the signed canonical, so
+# withholding it on disclosure would change the hash (see test_redacting_a_system_prompt...).
 _PRIMARY_PROVENANCE = {
     "model": "seedream-5.0-lite",
     "provider": "gmicloud-image",
     "generator": "genblaze",
-    "prompt": _PRIMARY_PROMPT,
 }
+_PRIMARY_PERSONAL = {"prompt": _PRIMARY_PROMPT}
 _FIXTURE_PROVENANCE = {"model": "rooted-demo-fixture", "note": "seeded demo asset"}
 
 # The demo AUDIO asset: a real Suno V5 instrumental clip (kie.ai), trimmed to 10s and bundled here.
@@ -154,6 +160,7 @@ def primary_manifest() -> Manifest:
         asset_sha256=hashlib.sha256(demo_sample_bytes()).hexdigest(),
         created_at=_CREATED_AT,
         system_provenance=_PRIMARY_PROVENANCE,
+        personal_provenance=_PRIMARY_PERSONAL,
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=DEMO_WATERMARK_ID)],
     )
 
@@ -215,12 +222,14 @@ def _register(
     storage: Storage | None,
     signing_key: Any,
     system_provenance: dict[str, Any],
+    personal_provenance: dict[str, Any] | None = None,
 ) -> None:
     manifest = Manifest(
         manifest_id=manifest_id,
         asset_sha256=hashlib.sha256(image_bytes).hexdigest(),
         created_at=_CREATED_AT,
         system_provenance=system_provenance,
+        personal_provenance=personal_provenance or {},
         soft_bindings=[SoftBinding(alg=ALG_TRUSTMARK_P, value=watermark_id)],
     )
     resolver.register(manifest, Image.open(io.BytesIO(image_bytes)), watermark_id)
@@ -255,6 +264,7 @@ def seed_demo(resolver: Resolver, log: TransparencyLog, storage: Storage | None 
         storage,
         sbr._signing_key,
         _PRIMARY_PROVENANCE,
+        _PRIMARY_PERSONAL,
     )
     for i, seed in enumerate(_EXTRA_SEEDS):
         buf = io.BytesIO()
@@ -506,8 +516,12 @@ async def demo_signed_manifest() -> dict[str, Any]:
 
     manifest = primary_manifest()
     cose = sign_manifest(manifest, sbr._signing_key)
+    # Disclose the REDACTED manifest (personal provenance withheld), not the full one. The signature
+    # is over the canonical payload, which excludes personal_provenance, so it still verifies
+    # against the redacted manifest and the tamper demo (editing a signed system field) still works;
+    # the generation prompt (personal) is never disclosed.
     return {
-        "manifest": manifest.model_dump(by_alias=True),
+        "manifest": manifest.redacted().model_dump(by_alias=True),
         "signatureB64": base64.b64encode(cose).decode(),
         "publicKeyHex": sbr._public_key_hex(),
     }

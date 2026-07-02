@@ -70,11 +70,52 @@ async def test_unknown_manifest_404() -> None:
     assert r.status_code == 404
 
 
+async def test_disclosed_demo_manifest_hashes_to_its_transparency_leaf() -> None:
+    # The bind that makes independent verification meaningful: the redacted manifest a client gets
+    # from GET /manifests hashes IDENTICALLY to its transparency-log leaf, because the generation
+    # prompt is PERSONAL provenance (excluded from the signed canonical), not system provenance.
+    from rooted_api import sbr
+    from rooted_api.demo import DEMO_MANIFEST_ID, seed_demo
+    from rooted_provenance.merkle import TransparencyLog
+    from rooted_provenance.resolver import InMemoryIndex, Resolver
+    from rooted_provenance.watermark import FakeWatermarker
+
+    resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+    log = TransparencyLog()
+    sbr.set_resolver(resolver)
+    sbr.set_log(log)
+    try:
+        seed_demo(resolver, log)
+        stored = resolver.get_manifest(DEMO_MANIFEST_ID)
+        assert stored is not None
+        # the prompt is personal (withheld), never in the disclosed system provenance
+        assert "prompt" not in stored.system_provenance
+        assert stored.personal_provenance.get("prompt")
+        leaf_hash = next(h for _i, mid, h in log.entries() if mid == DEMO_MANIFEST_ID)
+        # the disclosed (redacted) manifest hashes to the exact logged leaf
+        assert stored.redacted().canonical_hash() == leaf_hash
+        assert stored.canonical_hash() == leaf_hash  # full == redacted (personal excluded)
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
+
+
+async def test_signed_manifest_does_not_disclose_the_prompt() -> None:
+    # /demo/signed-manifest serves the REDACTED manifest: the generation prompt (personal) is never
+    # disclosed, and the signature still verifies against it (canonical excludes personal).
+    async with _client() as c:
+        r = await c.get("/demo/signed-manifest")
+    assert r.status_code == 200
+    body = r.json()
+    assert "prompt" not in body["manifest"].get("systemProvenance", {})
+    assert body["manifest"].get("personalProvenance", {}) == {}
+
+
 async def test_get_manifest_withholds_a_prompt_left_in_system_provenance() -> None:
     # A legacy/WORM-locked manifest carries the prompt in SYSTEM provenance (its signed hash is
     # sealed, so the manifest cannot change). The read route must still withhold the prompt while
-    # disclosing the rest of system provenance. The signed manifest at /demo/signed-manifest is
-    # unaffected (that path serves the full, verifiable record).
+    # disclosing the rest of system provenance. Newly signed manifests keep the prompt in personal
+    # provenance instead, so this stripping is defensive cover for legacy records.
     from rooted_api.sbr import get_resolver
     from rooted_provenance.models import Manifest
 

@@ -25,11 +25,13 @@ durable, vendor-neutral repository it recovers from, and that repository is B2.
 
 | Surface | Where |
 |---|---|
-| Web | <https://rooted-web-phi.vercel.app> |
+| Web | <https://rooted-web-phi.vercel.app> (installable PWA: Add to Home Screen) |
 | SBR API | <https://rooted-api-ubvc.onrender.com> |
 | MCP server | `https://rooted-api-ubvc.onrender.com/mcp` (judge-connectable over HTTP) |
 | CLI | `pip install ./cli`, then `rooted recover stripped.jpg` |
 | Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
+| Android app | [APK release](https://github.com/StephenSook/rooted/releases/tag/mobile-v0.1.0): share any image to Rooted Verify and it recovers against the live registry ([mobile/android](./mobile/android)) |
+| iOS app | native SwiftUI verifier, CI-built ([mobile/ios](./mobile/ios)); TestFlight link lands when the Apple Developer account clears |
 
 The site opens on a bloomed galaxy hero with a live `/status` metrics ribbon: the transparency tree,
 the recovery self-test latency and similarity, the storage backend, the recovery index, and the

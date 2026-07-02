@@ -60,14 +60,31 @@ echo "==> 4/6 Health check"
 curl -fsS "$URL/healthz"; echo
 
 echo "==> 5/6 Wiring rooted-api on Render (two vars, set individually, nothing else touched)"
+render_failed=0
 for pair in "ROOTED_WATERMARK_REMOTE_URL=$URL" "ROOTED_WATERMARK_REMOTE_TOKEN=$TOKEN"; do
   key="${pair%%=*}"; val="${pair#*=}"
-  curl -fsS -X PUT "https://api.render.com/v1/services/$RENDER_SVC/env-vars/$key" \
+  if curl -fsS -X PUT "https://api.render.com/v1/services/$RENDER_SVC/env-vars/$key" \
     -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
-    -d "{\"value\": \"$val\"}" >/dev/null \
-    || { echo "    Render API set for $key failed; set the two vars in the dashboard instead"; exit 1; }
-  echo "    set $key"
+    -d "{\"value\": \"$val\"}" >/dev/null 2>&1; then
+    echo "    set $key"
+  else
+    render_failed=1
+  fi
 done
+
+# The deploy already succeeded; only the Render auth can fail here (a stale RENDER_API_KEY in .env).
+# Do not hard-fail: print exactly what to paste into the Render dashboard and stop cleanly, so the
+# expensive Modal build is never wasted on a bad key.
+if [ "$render_failed" = "1" ]; then
+  echo ""
+  echo "The Render API rejected the RENDER_API_KEY in .env (likely stale). The Modal service IS"
+  echo "deployed and healthy. Finish by adding these two env vars to the rooted-api service at"
+  echo "https://dashboard.render.com/web/$RENDER_SVC/env-vars (or regenerate a Render API key):"
+  echo "    ROOTED_WATERMARK_REMOTE_URL   = $URL"
+  echo "    ROOTED_WATERMARK_REMOTE_TOKEN = (the value in your .env as ROOTED_WATERMARK_REMOTE_TOKEN)"
+  echo "Render redeploys on save; the watermark half goes live a couple minutes after."
+  exit 0
+fi
 
 echo "==> 6/6 Waiting for rooted-api to redeploy and the watermark half to go live (up to ~5 min)"
 for _ in $(seq 1 30); do

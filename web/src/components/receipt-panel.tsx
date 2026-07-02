@@ -72,7 +72,7 @@ export function ReceiptPanel() {
       {error && <p className="font-mono text-sm text-amber-400">Backend unreachable.</p>}
       {!error && !receipt && <p className="font-mono text-sm text-white/50">Fetching receipt…</p>}
 
-      {receipt && proof && (
+      {receipt && proof?.rootHash ? (
         <>
           <div className="flex items-center gap-2 font-mono text-sm">
             {receipt.verified ? (
@@ -140,7 +140,13 @@ export function ReceiptPanel() {
             </pre>
           </details>
         </>
-      )}
+      ) : receipt ? (
+        // The log has no leaf for this manifest yet: the empty-log fallback returns an empty proof.
+        // Render the honest degraded state instead of dereferencing a missing proof.
+        <p className="font-mono text-sm text-amber-400">
+          {receipt.error ?? "Transparency proof is not available yet."}
+        </p>
+      ) : null}
 
       <p className="mt-4 text-[11px] text-white/55">
         Interoperable with the C2PA SBR spec. Rooted deliberately refuses the spec mutation routes

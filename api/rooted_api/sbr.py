@@ -125,11 +125,27 @@ def _public_key_hex() -> str:
     return str(public_key_bytes(_signing_key.public_key()).hex())
 
 
+_checkpoint_cache: MerkleCheckpoint | None = None
+_checkpoint_cache_lock = threading.Lock()
+
+
 def _signed_head() -> MerkleCheckpoint:
-    """The signed tree head for the current log state. The epoch IS the tree size, so the same tree
-    state always yields the same signed checkpoint (a GET is idempotent and reproducible)."""
+    """The signed tree head for the current log state. The epoch IS the tree size. A checkpoint is
+    signed ONCE per tree state and cached, so the same tree state always yields the same signed
+    checkpoint (a GET is idempotent and reproducible) while signed_at is authenticated (bound into
+    the signature): re-signing per read would otherwise change the signature every call now that the
+    timestamp is signed. A new state (a grown tree) signs a fresh checkpoint."""
+    global _checkpoint_cache
     log = get_log()
-    return log.checkpoint(log.size, _signing_key, datetime.now(UTC).isoformat())
+    with _checkpoint_cache_lock:
+        size = log.size
+        root_hex = log.root().hex()
+        cached = _checkpoint_cache
+        if cached is not None and cached.tree_size == size and cached.root_hash == root_hex:
+            return cached
+        cp = log.checkpoint(size, _signing_key, datetime.now(UTC).isoformat())
+        _checkpoint_cache = cp
+        return cp
 
 
 def current_checkpoint() -> MerkleCheckpoint:
@@ -450,7 +466,9 @@ def _check_ingest_auth(provided: str | None) -> None:
 # manifest_id and watermark_id flow into content-addressable storage keys (manifests/<id>.json,
 # signatures/<id>.cose) and the soft binding; constrain them to a safe charset at the boundary so a
 # value with '/' or '..' can never shape a key (the key builders only sanitize ':').
-_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9:_.\-]{1,256}$")
+# \Z (absolute end), not $: $ also matches just before a trailing newline, so "id\n" would pass
+# and the newline would flow into a storage key. Matches the BYO key regex's deliberate \Z anchor.
+_SAFE_ID_RE = re.compile(r"\A[A-Za-z0-9:_.\-]{1,256}\Z")
 
 
 def _validate_id(value: str, field: str) -> None:
@@ -673,20 +691,25 @@ async def matches_by_content(
 ) -> SoftBindingQueryResult:
     """Recover a manifest from an uploaded asset by its perceptual content (PDQ).
 
-    The optional C2PA SBR params are honored without changing the default behavior: when none are
-    supplied the asset is matched by content exactly as before. maxResults caps the returned list.
-    hintAlg + hintValue are a watermark-first hint: the exact soft-binding lookup is tried before
-    the content scan, and a hit short-circuits it; a miss falls through to the normal content match,
-    so the hint only changes the path taken, never the manifest a given asset resolves to.
+    The optional C2PA SBR params are honored without changing WHICH manifest an asset resolves to:
+    the uploaded asset is ALWAYS matched by its perceptual content. maxResults caps the list.
+    hintAlg + hintValue are ADVISORY only: when the supplied binding names a manifest the content
+    ALSO matched, that manifest is moved to the front of the list. The hint can never introduce a
+    manifest the content did not match, so uploading arbitrary bytes with a known binding value can
+    never forge a "recovered by content" result. To recover a manifest from a binding value alone
+    (without the asset content), callers use GET /matches/byBinding, which is honestly binding-only.
     """
     resolver = get_resolver()
-    if hint_alg is not None and hint_value is not None:
-        hinted = await run_in_threadpool(resolver.resolve_by_binding, hint_alg, hint_value)
-        if hinted.matches:
-            return _cap_matches(hinted, max_results)
-    image = await _read_image(file)
     # resolve_by_content does blocking DB work and CPU-bound PDQ; offload it off the event loop.
+    image = await _read_image(file)
     result = await run_in_threadpool(resolver.resolve_by_content, image)
+    if hint_alg is not None and hint_value is not None and result.matches:
+        hinted = await run_in_threadpool(resolver.resolve_by_binding, hint_alg, hint_value)
+        hinted_ids = {m.manifest_id for m in hinted.matches}
+        if any(m.manifest_id in hinted_ids for m in result.matches):
+            ordered = [m for m in result.matches if m.manifest_id in hinted_ids]
+            ordered += [m for m in result.matches if m.manifest_id not in hinted_ids]
+            result = SoftBindingQueryResult(matches=ordered)
     return _cap_matches(result, max_results)
 
 
@@ -977,6 +1000,13 @@ def _proof_matches(
         return False, "proof tree size does not match the current tree size"
     if supplied.get("rootHash") != inclusion.root_hash:
         return False, "proof root hash does not match the current signed root"
+    # Bind the supplied audit path to THIS leaf. resolve()==root alone is insufficient: in a
+    # multi-leaf tree any valid proof resolves to the same root, so a receipt carrying leaf A's
+    # fields but leaf B's audit path would otherwise verify. At a fixed leaf_index + tree_size
+    # (both checked above) our inclusion proof is deterministic, so the caller's proof must equal
+    # the proof we issue for that leaf.
+    if supplied.get("proof") != inclusion.proof:
+        return False, "supplied audit path is not the proof for the claimed leaf"
     try:
         checkpoint = MerkleCheckpoint.model_validate(supplied.get("checkpoint"))
         if not verify_checkpoint(checkpoint, _signing_key.public_key()):

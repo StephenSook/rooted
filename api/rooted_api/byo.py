@@ -256,12 +256,19 @@ async def byo_register(req: ByoRegisterRequest) -> ByoRegisterResponse:
                     "(content-addressed, idempotent)"
                 ),
             )
+    from b2sdk.v2.exception import FileNotPresent
+
     try:
         data = await run_in_threadpool(storage.get, key)
-    except Exception as exc:  # noqa: BLE001 - deleted between the size check and the fetch
+    except (KeyError, FileNotPresent) as exc:
+        # Genuinely missing (deleted between the size check and the fetch): an honest 404.
         raise HTTPException(
             status_code=404,
             detail="object not found in the upload bucket (did the browser PUT complete?)",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - a storage OUTAGE must not masquerade as "not found"
+        raise HTTPException(
+            status_code=502, detail="upload storage is temporarily unavailable"
         ) from exc
     if len(data) > cap:  # backstop if the reported size lied
         raise HTTPException(status_code=413, detail=f"stored object too large (max {cap} bytes)")

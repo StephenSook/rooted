@@ -98,4 +98,28 @@ describe("ReceiptPanel", () => {
 
     expect(await screen.findByText(/Backend unreachable/)).toBeTruthy();
   });
+
+  it("degrades (no crash) when the log is empty and the proof is empty", async () => {
+    // The empty-log fallback returns verified=false, an error, and an EMPTY proof object ({}).
+    // Dereferencing proof.rootHash would throw; the panel must render the error state instead.
+    mockFetch({
+      "@context": RECEIPT["@context"],
+      "@type": RECEIPT["@type"],
+      repository: { uri: "https://rooted-api.example", manifestId: "" },
+      anchor: {
+        uri: "https://rooted-api.example/transparency/log",
+        parameters: {},
+        proof: {},
+      },
+      verified: false,
+      error: "no manifest is available in the transparency log yet",
+    });
+
+    render(<ReceiptPanel />);
+
+    expect(
+      await screen.findByText("no manifest is available in the transparency log yet"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/leaf/)).toBeNull();
+  });
 });

@@ -27,6 +27,7 @@ import { SupportedAlgorithms } from "@/components/supported-algorithms";
 import { TamperPanel } from "@/components/tamper-panel";
 import { TranscriptPanel } from "@/components/transcript-panel";
 import { VideoPanel } from "@/components/video-panel";
+import { WhenVisible } from "@/components/when-visible";
 import { MerkleExplorer } from "@/components/three/merkle-explorer";
 
 // The page reads as a narrative: the lead (hero + the headline recover strip) sits above a sticky
@@ -66,11 +67,21 @@ export default function Home() {
           title="The recovery loop"
           subtitle="Generate a signed asset, strip it, then recover the manifest from an invisible watermark or a perceptual hash."
         />
-        <GeneratePanel />
-        <RecoverPanel />
-        <ComparisonPanel />
-        <RobustnessPanel />
-        <ProvidersPanel />
+        <WhenVisible>
+          <GeneratePanel />
+        </WhenVisible>
+        <WhenVisible>
+          <RecoverPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <ComparisonPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <RobustnessPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <ProvidersPanel />
+        </WhenVisible>
       </section>
 
       <section id="modalities" className="flex scroll-mt-24 flex-col gap-8">
@@ -79,9 +90,15 @@ export default function Home() {
           title="Every modality"
           subtitle="The same recovery loop closes for audio, video, and speech-to-text transcripts."
         />
-        <AudioPanel />
-        <VideoPanel />
-        <TranscriptPanel />
+        <WhenVisible>
+          <AudioPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <VideoPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <TranscriptPanel />
+        </WhenVisible>
       </section>
 
       <section id="trust" className="flex scroll-mt-24 flex-col gap-8">
@@ -90,13 +107,27 @@ export default function Home() {
           title="Standards-grade trust"
           subtitle="C2PA Content Credentials, tamper forensics, ingredient lineage, and the algorithms on offer."
         />
-        <ContentCredentials />
-        <TamperPanel />
-        <IntegrityClashPanel />
-        <RemarkPanel />
-        <LineagePanel />
-        <ReceiptPanel />
-        <SupportedAlgorithms />
+        <WhenVisible>
+          <ContentCredentials />
+        </WhenVisible>
+        <WhenVisible>
+          <TamperPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <IntegrityClashPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <RemarkPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <LineagePanel />
+        </WhenVisible>
+        <WhenVisible>
+          <ReceiptPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <SupportedAlgorithms />
+        </WhenVisible>
       </section>
 
       <section id="backblaze" className="flex scroll-mt-24 flex-col gap-8">
@@ -105,11 +136,21 @@ export default function Home() {
           title="Backblaze B2"
           subtitle="Where every asset, manifest, and signed checkpoint lives, with event-driven ingest straight from the bucket."
         />
-        <StoragePanel />
-        <B2EventsPanel />
-        <ByoUploadPanel />
-        <RebuildPanel />
-        <GenblazePanel />
+        <WhenVisible>
+          <StoragePanel />
+        </WhenVisible>
+        <WhenVisible>
+          <B2EventsPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <ByoUploadPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <RebuildPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <GenblazePanel />
+        </WhenVisible>
       </section>
 
       <section id="log" className="flex scroll-mt-24 flex-col gap-8">
@@ -118,10 +159,18 @@ export default function Home() {
           title="The transparency log"
           subtitle="A Merkle log with WORM-sealed, signed checkpoints that anyone can re-verify."
         />
-        <MerkleExplorer />
-        <CheckpointLockPanel />
-        <ConsistencyPanel />
-        <CheckpointHistoryPanel />
+        <WhenVisible minHeight={320}>
+          <MerkleExplorer />
+        </WhenVisible>
+        <WhenVisible>
+          <CheckpointLockPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <ConsistencyPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <CheckpointHistoryPanel />
+        </WhenVisible>
       </section>
 
       <section id="network" className="flex scroll-mt-24 flex-col gap-8">
@@ -130,9 +179,15 @@ export default function Home() {
           title="Open network and agents"
           subtitle="Federated resolvers, live service status, and an MCP agent that verifies provenance on request."
         />
-        <FederationPanel />
-        <StatusPanel />
-        <AgentPanel />
+        <WhenVisible>
+          <FederationPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <StatusPanel />
+        </WhenVisible>
+        <WhenVisible>
+          <AgentPanel />
+        </WhenVisible>
       </section>
 
       <p className="font-mono text-xs text-white/50">

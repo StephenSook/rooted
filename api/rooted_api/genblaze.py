@@ -77,7 +77,8 @@ def _unavailable_integrity() -> GenblazeIntegrity:
         output_asset_sha256=None,
         generator="genblaze",
         mode="integrity (Mode 1)",
-        stored_on_b2=True,
+        # A manifest we could not even parse cannot attest that its asset is on B2.
+        stored_on_b2=False,
     )
 
 
@@ -101,6 +102,10 @@ def _genblaze_integrity(manifest_json: str) -> GenblazeIntegrity:
             output_asset_sha256=output_sha,
             generator="genblaze",
             mode="integrity (Mode 1)",
+            # Documented fact about this committed fixture: the run was written to B2 by Genblaze's
+            # own ObjectStorageSink when the fixture was produced (see make_genblaze_b2_sample.py),
+            # under a Genblaze-chosen key not in Rooted's asset_key namespace. Only asserted on the
+            # happy (parsed + verified) path; the unavailable path reports False.
             stored_on_b2=True,
         )
     except Exception as exc:  # noqa: BLE001 - a demo surface must degrade, never 500

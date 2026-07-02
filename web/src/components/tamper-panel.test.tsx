@@ -82,4 +82,32 @@ describe("TamperPanel", () => {
     expect(await screen.findByText(/seedream-5.0-lite \(authentic\)/)).toBeTruthy();
     expect(screen.getByText("evil-model")).toBeTruthy();
   });
+
+  it("shows an error, never SIGNATURE VALID, when tamper-diff returns a non-ok response", async () => {
+    // A 500 from /demo/tamper-diff must be treated as an error, not parsed into a green verdict.
+    globalThis.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.includes("/demo/signed-manifest")) {
+        return json({
+          manifest: {
+            manifestId: "urn:c2pa:demo",
+            assetSha256: ORIG_SHA,
+            createdAt: "2026-06-27T00:00:00Z",
+            systemProvenance: { model: ORIG_MODEL },
+          },
+          signatureB64: "sig",
+          publicKeyHex: "a".repeat(64),
+        });
+      }
+      if (u.includes("/demo/tamper-diff")) {
+        return json({ detail: "internal error" }, 500);
+      }
+      return json({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<TamperPanel />);
+
+    expect(await screen.findByText(/Backend unreachable/)).toBeTruthy();
+    expect(screen.queryByText(/SIGNATURE VALID/)).toBeNull();
+  });
 });

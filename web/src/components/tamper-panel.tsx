@@ -43,6 +43,8 @@ export function TamperPanel() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ manifest, signatureB64: s.signatureB64 }),
       });
+      // A non-ok response is an error, not a verdict: never parse it into a green "SIGNATURE VALID".
+      if (!r.ok) throw new Error(String(r.status));
       const d = await r.json();
       setDiff(d.fields ?? []);
       setSource(d.authenticSource ?? "registry");

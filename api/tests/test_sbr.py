@@ -149,10 +149,11 @@ def test_cap_matches_caps_only_when_supplied() -> None:
     assert [m.manifest_id for m in _cap_matches(full, 2).matches] == ["m0", "m1"]  # capped
 
 
-async def test_bycontent_hint_short_circuits_to_watermark_binding() -> None:
-    # hintAlg + hintValue are a REAL watermark-first hint: the exact soft-binding lookup runs before
-    # the content scan. Query with an asset that does not content-match while hinting at a known
-    # manifest; the hint recovers it, whereas the same query without the hint recovers nothing.
+async def test_bycontent_hint_cannot_forge_a_match_for_unmatched_content() -> None:
+    # hintAlg + hintValue are ADVISORY only on /matches/byContent: they can never introduce a
+    # manifest the uploaded CONTENT did not match. Uploading arbitrary bytes with a known binding
+    # value must NOT forge a "recovered by content" result (that would let anyone claim provenance
+    # for content they do not have). Binding-only recovery is /matches/byBinding, honestly named.
     from rooted_api.sbr import get_resolver
     from rooted_provenance.models import ALG_TRUSTMARK_P, Manifest
 
@@ -168,15 +169,26 @@ async def test_bycontent_hint_short_circuits_to_watermark_binding() -> None:
     other = _png(99)  # a different asset that does not content-match the registered one
     async with _client() as c:
         miss = await c.post("/matches/byContent", files={"file": ("o.png", other, "image/png")})
-        hit = await c.post(
+        # Same non-matching upload, but this time asserting the known binding as a hint.
+        forged = await c.post(
             "/matches/byContent",
             files={"file": ("o.png", other, "image/png")},
             params={"hintAlg": ALG_TRUSTMARK_P, "hintValue": "RThintwm"},
         )
+        # The genuine content DOES match with or without the hint; the hint only reorders.
+        genuine = await c.post(
+            "/matches/byContent",
+            files={"file": ("m.png", _png(50), "image/png")},
+            params={"hintAlg": ALG_TRUSTMARK_P, "hintValue": "RThintwm"},
+        )
     assert miss.status_code == 200
     assert miss.json()["matches"] == []
-    assert hit.status_code == 200
-    assert hit.json()["matches"][0]["manifestId"] == "urn:c2pa:hint"
+    # The forge attempt returns the SAME empty result as without the hint: no fabricated match.
+    assert forged.status_code == 200
+    assert forged.json()["matches"] == []
+    # The real asset still recovers, and the hinted+content-confirmed manifest is present.
+    assert genuine.status_code == 200
+    assert any(m["manifestId"] == "urn:c2pa:hint" for m in genuine.json()["matches"])
 
 
 async def test_bybinding_maxresults_validates_and_passes_through() -> None:

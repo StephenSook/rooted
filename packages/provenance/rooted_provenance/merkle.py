@@ -29,9 +29,15 @@ from pymerkle import (
 from .models import MerkleCheckpoint
 
 
-def _checkpoint_head(epoch: int, tree_size: int, root_hex: str) -> bytes:
-    """The exact bytes a checkpoint signs over."""
-    return f"rooted-checkpoint:{epoch}:{tree_size}:{root_hex}".encode()
+def _checkpoint_head(
+    epoch: int, tree_size: int, root_hex: str, signed_at: str | None = None
+) -> bytes:
+    """The exact bytes a checkpoint signs over. signed_at is bound into the signature so a
+    checkpoint's timestamp is authenticated (mutating it breaks verification). signed_at defaults
+    to None only to reconstruct the LEGACY head for verifying checkpoints sealed before signed_at
+    was bound (they are immutable in B2 Object Lock and must still verify)."""
+    base = f"rooted-checkpoint:{epoch}:{tree_size}:{root_hex}"
+    return (f"{base}:{signed_at}" if signed_at is not None else base).encode()
 
 
 class LeafStore(Protocol):
@@ -139,7 +145,7 @@ class TransparencyLog:
     ) -> MerkleCheckpoint:
         """Sign a checkpoint over a GIVEN tree state, so callers can pin it to the exact size/root
         they already read (rather than re-reading the live tree and risking a divergent state)."""
-        signature = priv.sign(_checkpoint_head(epoch, tree_size, root_hex))
+        signature = priv.sign(_checkpoint_head(epoch, tree_size, root_hex, signed_at))
         return MerkleCheckpoint(
             epoch=epoch,
             tree_size=tree_size,
@@ -188,10 +194,22 @@ class TransparencyLog:
 
 
 def verify_checkpoint(cp: MerkleCheckpoint, pub: Ed25519PublicKey) -> bool:
-    head = _checkpoint_head(cp.epoch, cp.tree_size, cp.root_hash)
     try:
-        pub.verify(base64.b64decode(cp.signature_b64), head)
-        return True
-    except (InvalidSignature, binascii.Error):
-        # bad signature or malformed base64; a None/non-str field is a wiring bug and should crash.
+        sig = base64.b64decode(cp.signature_b64)
+    except binascii.Error:
+        # malformed base64; a None/non-str field is a wiring bug and should crash.
         return False
+    # Current checkpoints bind signed_at; verify against that head first. Fall back to the legacy
+    # head (no signed_at) so checkpoints WORM-sealed before signed_at was bound still verify. A
+    # current checkpoint with a tampered signed_at fails both heads (the signature was over the
+    # real signed_at), so the timestamp is authenticated going forward.
+    for head in (
+        _checkpoint_head(cp.epoch, cp.tree_size, cp.root_hash, cp.signed_at),
+        _checkpoint_head(cp.epoch, cp.tree_size, cp.root_hash),
+    ):
+        try:
+            pub.verify(sig, head)
+            return True
+        except InvalidSignature:
+            continue
+    return False

@@ -136,6 +136,24 @@ async def test_verify_receipt_tampered_proof_is_false() -> None:
     assert body["error"]
 
 
+async def test_verify_receipt_wrong_leaf_proof_is_false() -> None:
+    # A receipt carrying leaf A's fields but a DIFFERENT real leaf B's audit path must be rejected.
+    # Both proofs resolve to the same signed root (same tree), so resolve()==root alone would pass;
+    # the proof must be bound to the CLAIMED leaf, not merely resolve to the root.
+    async with _client() as c:
+        await _ingest(c, "urn:c2pa:wla", "RWLA", 91)
+        await _ingest(c, "urn:c2pa:wlb", "RWLB", 92)
+        receipt_a = (await c.get("/manifests/urn:c2pa:wla/receipts")).json()
+        receipt_b = (await c.get("/manifests/urn:c2pa:wlb/receipts")).json()
+        # graft B's valid audit path into A's receipt; A's leafHash/leafIndex/root stay unchanged.
+        receipt_a["anchor"]["proof"]["proof"] = receipt_b["anchor"]["proof"]["proof"]
+        v = await c.post("/manifests/urn:c2pa:wla/receipts", json=receipt_a)
+    assert v.status_code == 200
+    body = v.json()
+    assert body["verified"] is False
+    assert body["error"]
+
+
 async def test_verify_receipt_malformed_body_is_400() -> None:
     async with _client() as c:
         await _ingest(c, "urn:c2pa:rcpt6", "RR06", 77)

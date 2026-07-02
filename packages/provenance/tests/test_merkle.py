@@ -43,6 +43,42 @@ def test_signed_checkpoint_verifies_and_tamper_fails() -> None:
     assert verify_checkpoint(tampered, pub) is False
 
 
+def test_checkpoint_signature_binds_signed_at() -> None:
+    # signed_at is authenticated: mutating only the timestamp must break verification, so a
+    # checkpoint's claimed signing time cannot be forged.
+    log = TransparencyLog()
+    log.append("urn:c2pa:a", "hash-a")
+    priv, pub = generate_keypair()
+    cp = log.checkpoint(epoch=1, priv=priv, signed_at="2026-07-02T00:00:00+00:00")
+    assert verify_checkpoint(cp, pub) is True
+    forged_time = cp.model_copy(update={"signed_at": "1900-01-01T00:00:00+00:00"})
+    assert verify_checkpoint(forged_time, pub) is False
+
+
+def test_verify_checkpoint_accepts_legacy_head_without_signed_at() -> None:
+    # Checkpoints WORM-sealed before signed_at was bound signed the legacy head (no signed_at) and
+    # are immutable in B2, so they must still verify. Reconstruct a legacy signature explicitly.
+    import base64
+
+    from rooted_provenance.merkle import _checkpoint_head
+    from rooted_provenance.models import MerkleCheckpoint
+
+    log = TransparencyLog()
+    log.append("urn:c2pa:a", "hash-a")
+    priv, pub = generate_keypair()
+    size = log.size
+    root_hex = log.root().hex()
+    legacy_sig = priv.sign(_checkpoint_head(1, size, root_hex))  # no signed_at bound
+    legacy_cp = MerkleCheckpoint(
+        epoch=1,
+        tree_size=size,
+        root_hash=root_hex,
+        signed_at="2026-06-01T00:00:00+00:00",
+        signature_b64=base64.b64encode(legacy_sig).decode(),
+    )
+    assert verify_checkpoint(legacy_cp, pub) is True
+
+
 def test_consistency_proof_under_growth() -> None:
     log = TransparencyLog()
     log.append("urn:c2pa:a", "hash-a")

@@ -1,0 +1,68 @@
+# XcodeGen spec for the Rooted iOS app.
+#
+# The .xcodeproj is a build artifact and is never committed. Generate it with:
+#   brew install xcodegen
+#   xcodegen generate
+# then open Rooted.xcodeproj in Xcode.
+#
+# TODO (Phase M2): add a Share Extension target so any app's share sheet can send
+# an image straight to Rooted for provenance recovery. Deliberately not added yet.
+
+name: Rooted
+
+options:
+  bundleIdPrefix: io.rooted
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # Swift 5 language mode on purpose: the app uses async/await and MainActor
+    # view models, but stays out of Swift 6 strict-concurrency enforcement so the
+    # first CI run is not blocked on Sendable diagnostics.
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  Rooted:
+    type: application
+    platform: iOS
+    sources:
+      - Rooted
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.rooted.verify
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      # XcodeGen writes this file at generate time; it stays untracked.
+      path: Rooted/Info.plist
+      properties:
+        CFBundleDisplayName: Rooted
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "Rooted photographs an image to recover its provenance."
+        NSPhotoLibraryUsageDescription: "Rooted reads the photo you choose so it can recover that image's provenance."
+        ITSAppUsesNonExemptEncryption: false
+
+  RootedTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - RootedTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: Rooted
+
+schemes:
+  Rooted:
+    build:
+      targets:
+        Rooted: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - RootedTests

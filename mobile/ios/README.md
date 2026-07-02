@@ -1,0 +1,52 @@
+# Rooted for iOS
+
+The physical-world verifier for [Rooted](https://rooted-web-phi.vercel.app). Pick a photo or
+point the camera at an image; the app uploads it to the live SBR API at
+`https://rooted-api-ubvc.onrender.com`, which recovers the image's provenance via invisible
+watermark or perceptual hash and returns the signed manifest with a live Merkle transparency
+proof. A recovered result links straight to the shareable web receipt.
+
+## Generate and run
+
+The Xcode project is generated, never committed. From this directory:
+
+```sh
+brew install xcodegen
+xcodegen generate
+open Rooted.xcodeproj
+```
+
+Then select the `Rooted` scheme and run on an iOS 17+ simulator or device. The camera button
+is disabled on simulators (no camera); the photo picker works everywhere.
+
+## Tests
+
+Unit tests cover the hand-built multipart body, the image downscale helper, and the decoding
+contract. The decoding fixtures are byte-for-byte JSON responses captured live from the
+deployed API with curl, so a server-side field rename fails the suite before it breaks the app.
+
+```sh
+xcodebuild -project Rooted.xcodeproj -scheme Rooted \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  CODE_SIGNING_ALLOWED=NO build test
+```
+
+CI runs exactly this on every push and pull request that touches `mobile/ios/**`
+(`.github/workflows/mobile-ios.yml`, macos-15 runner).
+
+## Honesty note
+
+Every screen renders live responses from the deployed API or an honest error state. There is
+no mock data, no bundled sample result, and no offline stub. "No provenance found in the
+registry for this image" is a real answer, not a failure. Provenance proves origin, not truth.
+
+## TestFlight plan
+
+One-liner: archive the `Rooted` scheme with a distribution certificate, upload via Xcode
+Organizer to App Store Connect, and distribute through an internal TestFlight group so judges
+can install without a paid device provisioning dance.
+
+## Roadmap
+
+- Phase M2: a Share Extension target (see the TODO in `project.yml`) so any app's share sheet
+  can send an image to Rooted for recovery.

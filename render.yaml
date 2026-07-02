@@ -22,6 +22,14 @@ services:
         value: "1"
       - key: PYTHON_VERSION
         value: "3.12.7"
+      # Fail the public write endpoint (POST /ingest) CLOSED on this judge-facing deploy: without a
+      # configured ROOTED_INGEST_KEY it returns 503 rather than accepting an unauthenticated write
+      # into the persistent recovery index and the WORM-anchored transparency log. The demo never
+      # uses the HTTP /ingest route (seed, /demo/generate, BYO, and the B2 webhook all call the
+      # ingest core in-process), so closing it changes nothing a judge sees. Set ROOTED_INGEST_KEY
+      # in the dashboard only if an authenticated external ingest client is ever needed.
+      - key: ROOTED_REQUIRE_INGEST_KEY
+        value: "1"
       # Live recovery index. With DATABASE_URL set to the Render Postgres (rooted-db, pgvector 0.7+),
       # the resolver runs on Postgres with an HNSW bit_hamming_ops index over the PDQ bit(256) column;
       # unset, it uses the in-memory index. sync:false -> paste rooted-db's Internal Database URL in

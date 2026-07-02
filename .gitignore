@@ -17,6 +17,9 @@ service-account*.json
 # research/ holds strategy PDFs, the private methodology, the nk.studio crawl, and the idea
 # writeup. None of it belongs in a public repo (internal-process + third-party content rules).
 research/
+# Saved third-party site resources (nk.studio webpack/GTM/Vimeo dumps) kept locally as UI
+# reference only; ~70MB of someone else's minified JS that must never enter the repo.
+ui update*
 
 # --- Claude Code local ---
 .claude/settings.local.json

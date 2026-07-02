@@ -61,14 +61,14 @@ void main() {
   float n = fbm(vec2(uv.x * 2.0 + t * 1.7, uv.y * 1.3 - t));
   float center = 0.125 + 0.125 * n;
   float d = abs(uv.y - center);
-  float core = pow(max(1.0 - d * 4.4, 0.0), 3.0);
-  float haze = pow(max(1.0 - d * 1.6, 0.0), 2.0) * 0.32;
+  float core = pow(max(1.0 - d * 4.8, 0.0), 3.0);
+  float haze = pow(max(1.0 - d * 1.6, 0.0), 2.0) * 0.26;
   float edgeFade = smoothstep(0.0, 0.14, uv.x) * smoothstep(1.0, 0.86, uv.x);
   float skyFade = 1.0 - smoothstep(0.26, 0.55, uv.y);
-  float aurora = (core * (0.6 + 0.4 * (0.5 + 0.5 * n)) + haze) * edgeFade * skyFade;
+  float aurora = (core * (0.5 + 0.35 * (0.5 + 0.5 * n)) + haze) * edgeFade * skyFade;
 
   vec3 col = mix(uAuroraLow, uAuroraHigh, clamp(uv.y * 2.6, 0.0, 1.0)) * aurora;
-  float alpha = clamp(aurora, 0.0, 1.0) * 0.68;
+  float alpha = clamp(aurora, 0.0, 1.0) * 0.52;
 
   // The ridge silhouettes over the aurora, so the glare reads as rising from behind the ground.
   col = mix(col, uGround, ground);

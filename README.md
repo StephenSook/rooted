@@ -89,8 +89,10 @@ flowchart LR
 
 ## Architecture
 
-Five surfaces over one trust core over two stores. Backblaze B2 holds the durable, content-addressed
-record and the WORM transparency seal; Postgres holds the fast recovery index.
+Many client surfaces (web, native iOS + Android, CLI, MCP, browser extension, an embeddable badge)
+over one trust core over two stores. Backblaze B2 holds the durable, content-addressed record and
+the WORM transparency seal; Postgres holds the fast recovery index. A dedicated Modal service
+carries the TrustMark model so the lean API stays torch-free.
 
 ```mermaid
 flowchart TB
@@ -98,8 +100,12 @@ flowchart TB
         WEB["Web<br/>Next 15 + R3F"]
         API["SBR API<br/>FastAPI"]
         MCP["MCP server<br/>FastMCP"]
-        CLI["CLI<br/>rooted"]
+        CLI["CLI<br/>rooted-sbr"]
         EXT["Browser extension<br/>MV3"]
+        MOB["Native apps<br/>iOS + Android"]
+    end
+    subgraph Model["Model service"]
+        WM["TrustMark<br/>watermark (Modal)"]
     end
     subgraph Core["Trust core (packages/provenance)"]
         RES["Resolver<br/>watermark + PDQ"]
@@ -113,7 +119,9 @@ flowchart TB
     WEB --> API
     CLI --> API
     EXT --> API
+    MOB --> API
     API --> MCP
+    API --> WM
     API --> RES --> SIGN --> LOG
     RES --> PG
     SIGN --> B2
@@ -136,7 +144,7 @@ suite, never from draft prose.
 | Genblaze AssemblyAI speech-to-text: a real speech clip to a hash-verified transcript, reconciled live with Rooted's signature (the run was persisted to B2; its object keys are recorded) | wired + live |
 | Genblaze wrote its own run to B2 via its `ObjectStorageSink` (a prior run); the endpoint reconciles the integrity hash + Rooted's signature live | wired + live |
 | Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), vendor-neutral | wired + live |
-| TrustMark variant P watermark (opt-in via `ROOTED_REAL_WATERMARK`) + PDQ fallback | wired + verified |
+| TrustMark variant P watermark + PDQ fallback; the real embed/decode runs live via a dedicated Modal model service, so the ReMark watermark-removal failover shows a real decode defeated while PDQ still recovers | wired + live |
 | Audio + video modalities (spectral audio fingerprint, per-keyframe video PDQ) | wired + live |
 | Green C2PA "Trusted" via the conformance test trust list (labeled FOR TESTING ONLY) | wired + live |
 | C2PA ingredient-DAG lineage + a 3D graph; tamper-diff forensics (which signed field changed vs the registry) | wired + live |
@@ -144,6 +152,8 @@ suite, never from draft prose.
 | FastMCP product server (judge-connectable over HTTP); a Claude provenance agent, opt-in when `ANTHROPIC_API_KEY` is set | wired + live |
 | Packaged `rooted` SBR CLI, published on PyPI (`pip install rooted-sbr`) | wired + live |
 | Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
+| Native iOS (SwiftUI) + Android (Compose) verifier apps: pick / photograph / share an image to recover against the live registry, same verify path, no mock data | wired + verified (Android on-device; iOS CI-built, TestFlight pending) |
+| Embeddable verify badge: a one-line script that renders a live provenance seal on any third-party site | wired + live |
 | Act-based web UI: a bloomed galaxy hero, a live `/status` metrics ribbon, the in-browser strip-and-recover reveal, and a sticky scroll-spy nav over six acts | wired + live |
 | Append-only Merkle consistency proof, bound to the WORM B2 checkpoint (`sealedInObjectLock`, `sealedRootMatches`) | wired + live |
 | Checkpoint-history: the chain of signed checkpoints, each re-verified with its own immutable retain-until (lists the real WORM objects when the locked bucket is list-readable, labeled when it falls back to the model) | wired + live |
@@ -169,6 +179,13 @@ suite, never from draft prose.
   wrapping the public SBR API; install with `pip install rooted-sbr`.
 - **Browser extension** (`/extension`): a Manifest V3 extension that recovers provenance for any image
   on the web from a right-click.
+- **Mobile apps** (`/mobile`): a native SwiftUI iOS app (with a "Verify with Rooted" share extension)
+  and a native Jetpack Compose Android app (a system share-sheet target plus camera capture). Pick,
+  photograph, or share any image and it recovers against the live registry, showing the recovered
+  manifest and the Merkle proof. The Android build ships as an installable APK release; the same
+  verify code path runs live against the deployed API, with no mock data.
+- **Verify badge** (`/web/public/badge.js`): a one-line `<script>` any site can paste to show a live
+  provenance seal for a manifest, served from a CORS-open route so it embeds anywhere.
 - **B2 event ingest**: a Backblaze B2 Event Notification rule posts a signed webhook when an object
   lands under a watched prefix; Rooted verifies the HMAC, fetches the object, and registers it for
   recovery. Once the rule is enabled, dropping an asset in B2 makes it auto-recoverable.
@@ -201,13 +218,18 @@ Real C2PA v2.4 Soft Binding Resolution routes, contract-tested with schemathesis
 /api          FastAPI SBR API (C2PA v2.4 routes), signing, SB 942 redaction, transparency, B2 event webhook
 /worker       the generate -> watermark -> store -> sign -> index -> log ingest pipeline + Genblaze generator
 /mcp          Rooted's own MCP server (FastMCP): verify_asset, recover_manifest, query_transparency_log
-/cli          the `rooted` SBR CLI (rooted-sbr)
+/cli          the `rooted` SBR CLI (rooted-sbr, published on PyPI)
 /extension    Manifest V3 browser extension: right-click any image to recover its provenance
+/mobile
+  /ios        native SwiftUI verifier + share extension (pick / photograph / share an image to verify)
+  /android    native Jetpack Compose verifier (share-sheet target + camera), published as an APK release
+/infra
+  /modal      the TrustMark watermark model service (real embed + decode over HTTP, weights baked)
 /packages
   /provenance trust core: models + canonical hashing, Ed25519/COSE, c2pa-python claim, PDQ, Merkle log
   /storage    Backblaze B2 (b2sdk), PostgresIndex (pgvector bit(256) HNSW), transparency store
-/web          Next.js 15 front end: R3F galaxy, recovery reveal, C2PA display, 3D Merkle explorer
-/scripts      one-shot ops (B2 Object Lock activation, B2 event-rule configurator)
+/web          Next.js 15 front end: R3F galaxy, recovery reveal, C2PA display, 3D Merkle explorer, verify badge
+/scripts      one-shot ops (B2 Object Lock, event-rule + CORS + lifecycle + SSE configurators, Modal + PyPI publish)
 ```
 
 ## Quickstart
@@ -245,6 +267,10 @@ failures at p95 around 6 ms, so the live demo holds up under concurrent judges.
 - **API + Postgres**: Render (`rooted-api`, always-on) + a managed Postgres.
 - **B2 buckets**: a dev bucket for iteration and a separate Object Lock (compliance retention) bucket
   for the WORM transparency seal.
+- **Watermark model**: a Modal service (`infra/modal`) carrying the real TrustMark model, so the API
+  container stays torch-free; wired in via `ROOTED_WATERMARK_REMOTE_URL`.
+- **Mobile**: the Android app ships as a GitHub APK release; the iOS app is CI-built and goes to
+  TestFlight once the Apple Developer account is in place.
 
 A scheduled keepalive ping keeps the live app and database warm through the judging window.
 

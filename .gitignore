@@ -75,4 +75,7 @@ trustmark_weights/
 tmp/
 .cache/
 
+# --- Secrets (defense-in-depth: the whole dir, not just *.key) ---
+secrets/
+
 # DO commit lockfiles: uv.lock, pnpm-lock.yaml are tracked on purpose.

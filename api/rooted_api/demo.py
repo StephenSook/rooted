@@ -963,23 +963,37 @@ def reset_remark_cache() -> None:
 
 
 def _load_remark_watermarker() -> Watermarker | None:
-    """The real TrustMark variant P watermarker, or None when the `watermark` extra is not installed
-    (or the model cannot load) so the endpoint degrades honestly instead of faking a decode. Cached
-    after the first load. Tests monkeypatch this seam to inject a FakeWatermarker."""
+    """The real TrustMark variant P watermarker, or None when no real model is reachable so the
+    endpoint degrades honestly instead of faking a decode. Two real sources, in order: the remote
+    Modal watermark service (when ROOTED_WATERMARK_REMOTE_URL/TOKEN are set, which is how the lean
+    prod deploy gets a real model), then the in-process TrustMark (when the `watermark` extra is
+    installed locally). Every path runs the real model; the remote just runs it on a machine that
+    carries torch. Cached after the first resolution. Tests monkeypatch this seam."""
     global _remark_watermarker, _remark_watermarker_loaded
     if _remark_watermarker_loaded:
         return _remark_watermarker
     with _remark_watermarker_lock:
         if not _remark_watermarker_loaded:
-            try:
-                from rooted_provenance.watermark import TrustMarkWatermarker
-
-                _remark_watermarker = TrustMarkWatermarker()
-            except Exception as exc:  # noqa: BLE001 - ImportError or a model-load failure degrades
-                logger.info("remark-failover: real TrustMark unavailable, degrading: %s", exc)
-                _remark_watermarker = None
+            _remark_watermarker = _resolve_real_watermarker()
             _remark_watermarker_loaded = True
     return _remark_watermarker
+
+
+def _resolve_real_watermarker() -> Watermarker | None:
+    from rooted_api.remote_watermark import RemoteWatermarker, remote_watermark_config
+
+    config = remote_watermark_config()
+    if config is not None:
+        base_url, token = config
+        logger.info("remark-failover: using the remote watermark service")
+        return RemoteWatermarker(base_url, token)
+    try:
+        from rooted_provenance.watermark import TrustMarkWatermarker
+
+        return TrustMarkWatermarker()
+    except Exception as exc:  # noqa: BLE001 - ImportError or a model-load failure degrades
+        logger.info("remark-failover: no real TrustMark available, degrading: %s", exc)
+        return None
 
 
 def _staged_attacked_bytes(watermarker: Watermarker | None) -> bytes:

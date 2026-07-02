@@ -51,6 +51,10 @@ testpaths = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# infra/ holds standalone Modal deploy scripts (heavy framework decorators, the `modal` SDK is not
+# a repo dependency and runs only on Modal's builders). It is never imported by the app, so it is
+# out of scope for the app's type gate.
+exclude = ["^infra/"]
 
 # Third-party modules that ship no type stubs / py.typed marker, or that are optional extras not
 # installed in the default (CI) sync. Ignoring missing imports for ONLY these keeps strict checking

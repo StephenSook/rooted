@@ -5,6 +5,7 @@
 [![CI](https://github.com/StephenSook/rooted/actions/workflows/ci.yml/badge.svg)](https://github.com/StephenSook/rooted/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Live demo](https://img.shields.io/badge/live-demo-34d399.svg)](https://rooted-web-phi.vercel.app)
+[![PyPI](https://img.shields.io/pypi/v/rooted-sbr.svg?logo=pypi&logoColor=white)](https://pypi.org/project/rooted-sbr/)
 [![Python](https://img.shields.io/badge/python-3.11--3.13-3776AB.svg?logo=python&logoColor=white)](./pyproject.toml)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black.svg?logo=nextdotjs)](./web)
 [![C2PA SBR](https://img.shields.io/badge/C2PA-SBR_2.4-6366f1.svg)](https://spec.c2pa.org/specifications/specifications/2.4/softbinding/Decoupled.html)
@@ -28,7 +29,7 @@ durable, vendor-neutral repository it recovers from, and that repository is B2.
 | Web | <https://rooted-web-phi.vercel.app> (installable PWA: Add to Home Screen) |
 | SBR API | <https://rooted-api-ubvc.onrender.com> |
 | MCP server | `https://rooted-api-ubvc.onrender.com/mcp` (judge-connectable over HTTP) |
-| CLI | `pip install ./cli`, then `rooted recover stripped.jpg` |
+| CLI | `pip install rooted-sbr`, then `rooted recover stripped.jpg` ([PyPI](https://pypi.org/project/rooted-sbr/)) |
 | Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
 | Android app | [APK release](https://github.com/StephenSook/rooted/releases/tag/mobile-v0.1.0): share any image to Rooted Verify and it recovers against the live registry ([mobile/android](./mobile/android)) |
 | iOS app | native SwiftUI verifier, CI-built ([mobile/ios](./mobile/ios)); TestFlight link lands when the Apple Developer account clears |
@@ -141,7 +142,7 @@ suite, never from draft prose.
 | C2PA ingredient-DAG lineage + a 3D graph; tamper-diff forensics (which signed field changed vs the registry) | wired + live |
 | Side-by-side vs the official C2PA reader (No Content Credentials vs RECOVERED on the same bytes) | wired + live |
 | FastMCP product server (judge-connectable over HTTP); a Claude provenance agent, opt-in when `ANTHROPIC_API_KEY` is set | wired + live |
-| Packaged `rooted` SBR CLI (`pip install ./cli`) | wired + live |
+| Packaged `rooted` SBR CLI, published on PyPI (`pip install rooted-sbr`) | wired + live |
 | Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
 | Act-based web UI: a bloomed galaxy hero, a live `/status` metrics ribbon, the in-browser strip-and-recover reveal, and a sticky scroll-spy nav over six acts | wired + live |
 | Append-only Merkle consistency proof, bound to the WORM B2 checkpoint (`sealedInObjectLock`, `sealedRootMatches`) | wired + live |
@@ -165,7 +166,7 @@ suite, never from draft prose.
 - **MCP server** (`/mcp` and mounted at `/mcp` on the API): three curated tools so an AI agent can
   verify provenance, recover manifests, and query the transparency log conversationally.
 - **CLI** (`/cli`): the `rooted` command (`recover`, `status`, `manifest`, `proof`, `algorithms`)
-  wrapping the public SBR API; install with `pip install ./cli`.
+  wrapping the public SBR API; install with `pip install rooted-sbr`.
 - **Browser extension** (`/extension`): a Manifest V3 extension that recovers provenance for any image
   on the web from a right-click.
 - **B2 event ingest**: a Backblaze B2 Event Notification rule posts a signed webhook when an object

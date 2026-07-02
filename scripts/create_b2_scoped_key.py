@@ -131,15 +131,26 @@ def _env() -> dict[str, str]:
     return out
 
 
+def _capabilities(include_locked: bool) -> list[str]:
+    """The exact capability list the key gets: the base set, plus the two retention capabilities the
+    Object-Lock checkpoint paths need when the locked bucket is covered."""
+    caps = [cap for cap, _ in CAPABILITIES]
+    if include_locked:
+        caps += [cap for cap, _ in LOCKED_CAPABILITIES]
+    return caps
+
+
+def _bucket_names(bucket_name: str, locked_bucket_name: str | None) -> list[str]:
+    """The bucket(s) the key is restricted to: the dev bucket, plus the locked bucket when given."""
+    return [bucket_name] if locked_bucket_name is None else [bucket_name, locked_bucket_name]
+
+
 def plan(bucket_name: str, locked_bucket_name: str | None = None) -> dict[str, object]:
     """Pure planning: the exact key request that --apply would send (name, capabilities, bucket
     restriction, no namePrefix), for printing and for tests. With locked_bucket_name the request
     covers both buckets and adds exactly the two retention capabilities the locked paths need."""
-    caps = [cap for cap, _ in CAPABILITIES]
-    buckets = [bucket_name]
-    if locked_bucket_name is not None:
-        caps += [cap for cap, _ in LOCKED_CAPABILITIES]
-        buckets.append(locked_bucket_name)
+    caps = _capabilities(locked_bucket_name is not None)
+    buckets = _bucket_names(bucket_name, locked_bucket_name)
     return {
         "keyName": KEY_NAME,
         "capabilities": caps,
@@ -221,10 +232,12 @@ def main() -> None:
         print("dry run (default): no key was created. Re-run with --apply to create it.")
         return
 
-    request = plan(bucket_name, locked_name if include_locked else None)
-    bucket_ids = [api.get_bucket_by_name(name).id_ for name in request["bucketNames"]]  # type: ignore[union-attr]
+    locked_arg = locked_name if include_locked else None
+    bucket_ids = [
+        api.get_bucket_by_name(name).id_ for name in _bucket_names(bucket_name, locked_arg)
+    ]
     created = api.create_key(
-        capabilities=request["capabilities"],
+        capabilities=_capabilities(include_locked),
         key_name=KEY_NAME,
         bucket_ids=bucket_ids,
     )

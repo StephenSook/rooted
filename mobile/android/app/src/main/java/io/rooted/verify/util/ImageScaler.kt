@@ -39,10 +39,12 @@ object ImageScaler {
 
     // Returns re-encoded JPEG bytes, or null when the uri does not decode as an image.
     fun loadDownscaledJpeg(resolver: ContentResolver, uri: Uri): ByteArray? {
+        // In bounds-only mode decodeStream returns null BY DESIGN, so the stream open and the
+        // decode result must be null-checked separately (an elvis on the use{} result would
+        // reject every image; caught live on the emulator).
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, bounds)
-        } ?: return null
+        val boundsStream = resolver.openInputStream(uri) ?: return null
+        boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
         val options = BitmapFactory.Options().apply {

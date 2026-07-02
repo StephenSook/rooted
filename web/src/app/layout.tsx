@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Browser chrome matches the rooted-sky near-black, and iOS treats the installed PWA as a real
+// app surface (standalone, no Safari chrome).
+export const viewport = {
+  themeColor: "#060a09",
+};
+
 export const metadata: Metadata = {
   // Absolute base for file-based metadata (the Open Graph image, robots, sitemap) and any relative URL.
   metadataBase: new URL(SITE_URL),

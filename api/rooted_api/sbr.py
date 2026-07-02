@@ -1293,7 +1293,11 @@ class InclusionProofResponse(CamelModel):
     The client resolves the serialized proof to a root and confirms that root equals the embedded
     signed checkpoint's root_hash, then verifies the checkpoint signature against public_key_hex.
     server_verified is only the server's own check and is not a substitute for that client-side
-    verification. leaf_hash is the manifest's canonical hash (the leaf), unchanged by redaction.
+    verification. leaf_hash is the canonical hash of the signed manifest. Newly signed manifests
+    keep personal provenance (e.g. the generation prompt) out of the canonical payload, so their
+    redacted disclosure from GET /manifests hashes identically to this leaf. A legacy leaf whose
+    personal data was signed into system_provenance keeps its original hash (the log is append-only
+    and WORM-anchored), so its redacted disclosure differs by design.
     """
 
     manifest_id: str

@@ -12,6 +12,7 @@ Secret:  uvx modal secret create rooted-watermark-auth ROOTED_WATERMARK_TOKEN=<r
 Auth:    every request must carry X-Rooted-Token matching that secret.
 """
 
+import hmac
 import io
 import os
 
@@ -73,14 +74,27 @@ def web():
 
     def check_token(x_rooted_token: str = Header(default="")) -> None:
         expected = os.environ.get("ROOTED_WATERMARK_TOKEN", "")
-        if not expected or x_rooted_token != expected:
+        # Constant-time compare (encoded, so a non-ASCII header is a clean 401, not a 500), matching
+        # the main API's ingest-key gate; a plain != leaks length/prefix via timing.
+        ok = bool(expected) and hmac.compare_digest(
+            x_rooted_token.encode("utf-8"), expected.encode("utf-8")
+        )
+        if not ok:
             raise HTTPException(status_code=401, detail="bad or missing X-Rooted-Token")
 
     def load_image(data: bytes) -> Image.Image:
         if len(data) > 26_214_400:
             raise HTTPException(status_code=413, detail="image too large")
         try:
-            return Image.open(io.BytesIO(data)).convert("RGB")
+            img = Image.open(io.BytesIO(data))
+            # Decompression-bomb guard: the header carries the dimensions before any pixels are
+            # materialized, so reject an oversized canvas here (like the main API's decode guard).
+            width, height = img.size
+            if width * height > 50_000_000:
+                raise HTTPException(status_code=413, detail="image dimensions too large")
+            return img.convert("RGB")
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=415, detail="not a decodable image") from exc
 

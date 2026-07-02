@@ -567,12 +567,6 @@ _BUCKET_PROPS_TIMEOUT_SECONDS = 4.0
 _bucket_props_cache: tuple[float, BucketProperties] | None = None
 
 
-def reset_bucket_props_cache() -> None:
-    """Clear the cached bucket-properties read (tests, or to force a fresh read)."""
-    global _bucket_props_cache
-    _bucket_props_cache = None
-
-
 def _cached_bucket_properties(storage: B2Storage) -> BucketProperties:
     """Read the bucket's live properties (one b2_list_buckets round trip), cached briefly so a
     burst on /demo/storage cannot hammer B2's class-C API. Synchronous: run in a threadpool."""

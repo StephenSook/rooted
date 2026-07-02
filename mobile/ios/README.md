@@ -19,11 +19,21 @@ open Rooted.xcodeproj
 Then select the `Rooted` scheme and run on an iOS 17+ simulator or device. The camera button
 is disabled on simulators (no camera); the photo picker works everywhere.
 
+## Share Extension
+
+The app embeds a share extension named "Verify with Rooted". In any app that can share an
+image (Photos, Safari, Files, a chat thread), tap Share on an image and pick Verify with
+Rooted: the extension uploads that image to the same live API, then shows the recovered
+manifest with its live Merkle transparency proof, or the honest no-match state. It compiles
+the exact same client, downscaler, and view model files as the app's Verify tab, so there is
+no second code path and no offline stub. The extension activates for exactly one shared image.
+
 ## Tests
 
-Unit tests cover the hand-built multipart body, the image downscale helper, and the decoding
-contract. The decoding fixtures are byte-for-byte JSON responses captured live from the
-deployed API with curl, so a server-side field rename fails the suite before it breaks the app.
+Unit tests cover the hand-built multipart body, the image downscale helper, the share-payload
+image picking, and the decoding contract. The decoding fixtures are byte-for-byte JSON
+responses captured live from the deployed API with curl, so a server-side field rename fails
+the suite before it breaks the app.
 
 ```sh
 xcodebuild -project Rooted.xcodeproj -scheme Rooted \
@@ -48,5 +58,5 @@ can install without a paid device provisioning dance.
 
 ## Roadmap
 
-- Phase M2: a Share Extension target (see the TODO in `project.yml`) so any app's share sheet
-  can send an image to Rooted for recovery.
+- Phase M2 (done): the `RootedShare` share extension target, so any app's share sheet can
+  send an image to Rooted for recovery.

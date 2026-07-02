@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import httpx
 from httpx import ASGITransport
+from PIL import Image
 
 from rooted_api.main import app
 
@@ -30,6 +31,48 @@ async def test_tamper_diff_clean_for_authentic_manifest() -> None:
     assert b["signatureValid"] is True
     assert b["tampered"] is False
     assert all(not f["changed"] for f in b["fields"])
+
+
+async def test_tamper_diff_clean_when_registry_authentic_is_legacy_shaped() -> None:
+    # The live case (merge != live): the registry holds a LEGACY manifest with the prompt in
+    # system_provenance, while /demo/signed-manifest serves the current shape (prompt in personal).
+    # Comparing on the DISCLOSED (redacted) signed fields, the unedited manifest is NOT tampered.
+    from rooted_api import sbr
+    from rooted_api.demo import primary_manifest
+    from rooted_provenance.merkle import TransparencyLog
+    from rooted_provenance.resolver import InMemoryIndex, Resolver
+    from rooted_provenance.watermark import FakeWatermarker
+
+    resolver = Resolver(InMemoryIndex(), FakeWatermarker())
+    sbr.set_resolver(resolver)
+    sbr.set_log(TransparencyLog())
+    try:
+        current = primary_manifest()
+        legacy = current.model_copy(
+            update={
+                "system_provenance": {
+                    **current.system_provenance,
+                    "prompt": current.personal_provenance["prompt"],
+                },
+                "personal_provenance": {},
+            }
+        )
+        resolver.register(legacy, Image.new("RGB", (64, 64)), "DEMO")
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            signed = await _signed(c)
+            r = await c.post(
+                "/demo/tamper-diff",
+                json={"manifest": signed["manifest"], "signatureB64": signed["signatureB64"]},
+            )
+        assert r.status_code == 200, r.text
+        b = r.json()
+        assert b["authenticSource"] == "registry"  # it used the stored legacy authentic
+        assert b["signatureValid"] is True
+        assert b["tampered"] is False
+        assert all(not f["changed"] for f in b["fields"])
+    finally:
+        sbr.set_resolver(None)
+        sbr.set_log(None)
 
 
 async def test_tamper_diff_flags_the_changed_field() -> None:

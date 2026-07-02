@@ -84,8 +84,13 @@ async def tamper_diff(req: TamperDiffRequest) -> TamperDiffResponse:
         authentic = primary_manifest()
         source = "demo"
 
-    a = _signed_fields(authentic)
-    s = _signed_fields(submitted)
+    # Diff over the DISCLOSED (redacted) signed fields on both sides, so a legacy authentic that
+    # carries a prompt in system_provenance and a current manifest that keeps the prompt in personal
+    # provenance are compared on the same basis (the prompt, personal either way, is never a diffed
+    # field). The signature check above still covers the FULL canonical payload, so any real tamper
+    # of a signed field is caught there regardless.
+    a = _signed_fields(authentic.redacted())
+    s = _signed_fields(submitted.redacted())
     fields = []
     for key in sorted(set(a) | set(s)):
         a_val = a.get(key)

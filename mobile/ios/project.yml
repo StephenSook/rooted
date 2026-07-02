@@ -5,8 +5,9 @@
 #   xcodegen generate
 # then open Rooted.xcodeproj in Xcode.
 #
-# TODO (Phase M2): add a Share Extension target so any app's share sheet can send
-# an image straight to Rooted for provenance recovery. Deliberately not added yet.
+# Two targets ship: the Rooted app and the RootedShare share extension
+# (Phase M2), which lets any app's share sheet send an image straight to
+# Rooted for provenance recovery.
 
 name: Rooted
 
@@ -34,6 +35,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.rooted.verify
         TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      # Builds the share extension and copies it into the app's PlugIns
+      # folder, so building the Rooted scheme builds everything CI needs.
+      - target: RootedShare
+        embed: true
     info:
       # XcodeGen writes this file at generate time; it stays untracked.
       path: Rooted/Info.plist
@@ -45,6 +51,37 @@ targets:
         NSCameraUsageDescription: "Rooted photographs an image to recover its provenance."
         NSPhotoLibraryUsageDescription: "Rooted reads the photo you choose so it can recover that image's provenance."
         ITSAppUsesNonExemptEncryption: false
+
+  RootedShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - RootedShare
+      # Shared with the app target so the extension uploads, decodes, and
+      # verifies through exactly the same code. No duplicated files. All of
+      # these are extension-safe: no PhotosUI, no UIApplication.shared.
+      - path: Rooted/Api/RootedClient.swift
+      - path: Rooted/Features/Verify/ImageProcessor.swift
+      - path: Rooted/Features/Verify/VerifyViewModel.swift
+      - path: Rooted/Features/Share/SharePayload.swift
+      - path: Rooted/Theme.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.rooted.verify.share
+        TARGETED_DEVICE_FAMILY: "1"
+        APPLICATION_EXTENSION_API_ONLY: true
+    info:
+      # XcodeGen writes this file at generate time; it stays untracked.
+      path: RootedShare/Info.plist
+      properties:
+        CFBundleDisplayName: Verify with Rooted
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionAttributes:
+            # The simple dictionary activation rule: exactly one image.
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).ShareViewController"
 
   RootedTests:
     type: bundle.unit-test

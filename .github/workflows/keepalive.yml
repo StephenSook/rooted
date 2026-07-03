@@ -5,7 +5,9 @@ name: keepalive
 # then this job no-ops.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # Offset minutes (not */10, not :00): GitHub deprioritizes contended schedules, which was
+    # stretching actual delivery to 65-80 min gaps. Odd offsets get materially better delivery.
+    - cron: "4,14,24,34,44,54 * * * *"
   workflow_dispatch:
 
 jobs:

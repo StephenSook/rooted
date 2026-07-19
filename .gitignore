@@ -79,3 +79,6 @@ tmp/
 secrets/
 
 # DO commit lockfiles: uv.lock, pnpm-lock.yaml are tracked on purpose.
+
+# --- Private working documents dropped in the repo root (pitch guides, prompt kits) ---
+/*.pdf

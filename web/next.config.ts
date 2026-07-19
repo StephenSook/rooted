@@ -53,9 +53,22 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
 ];
 
+// Stable install links printed on QR codes (demo video, README). The QR targets never change;
+// where they land can. iOS flips to the TestFlight public link via IOS_TESTFLIGHT_URL at build
+// time; until then it lands on the iOS app source. Android goes to the APK release.
+const IOS_INSTALL_URL =
+  process.env.IOS_TESTFLIGHT_URL ?? "https://github.com/StephenSook/rooted/tree/main/mobile/ios";
+const ANDROID_INSTALL_URL = "https://github.com/StephenSook/rooted/releases/tag/mobile-v0.1.0";
+
 const nextConfig: NextConfig = {
   // three ships ESM that some bundler paths choke on; transpiling it keeps R3F builds reliable.
   transpilePackages: ["three"],
+  async redirects() {
+    return [
+      { source: "/get/ios", destination: IOS_INSTALL_URL, permanent: false },
+      { source: "/get/android", destination: ANDROID_INSTALL_URL, permanent: false },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${API_PROXY_TARGET}/:path*` }];
   },

@@ -35,6 +35,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.rooted.verify
         TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       # Builds the share extension and copies it into the app's PlugIns
       # folder, so building the Rooted scheme builds everything CI needs.

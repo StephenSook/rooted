@@ -32,7 +32,7 @@ durable, vendor-neutral repository it recovers from, and that repository is B2.
 | CLI | `pip install rooted-sbr`, then `rooted recover stripped.jpg` ([PyPI](https://pypi.org/project/rooted-sbr/)) |
 | Browser extension | load `extension/` unpacked (see [extension/README.md](./extension/README.md)) |
 | Android app | [APK release](https://github.com/StephenSook/rooted/releases/tag/mobile-v0.1.0): share any image to Rooted Verify and it recovers against the live registry ([mobile/android](./mobile/android)) |
-| iOS app | native SwiftUI verifier, CI-built ([mobile/ios](./mobile/ios)); TestFlight link lands when the Apple Developer account clears |
+| iOS app | [TestFlight beta](https://testflight.apple.com/join/X3T8nHza): native SwiftUI verifier, pick or share an image and it recovers against the live registry ([mobile/ios](./mobile/ios)) |
 
 The site opens on a bloomed galaxy hero with a live `/status` metrics ribbon: the transparency tree,
 the recovery self-test latency and similarity, the storage backend, the recovery index, and the
@@ -152,7 +152,7 @@ suite, never from draft prose.
 | FastMCP product server (judge-connectable over HTTP); a Claude provenance agent, opt-in when `ANTHROPIC_API_KEY` is set | wired + live |
 | Packaged `rooted` SBR CLI, published on PyPI (`pip install rooted-sbr`) | wired + live |
 | Browser extension (right-click any image to recover its provenance) | wired (load unpacked) |
-| Native iOS (SwiftUI) + Android (Compose) verifier apps: pick / photograph / share an image to recover against the live registry, same verify path, no mock data | wired + verified (Android on-device; iOS CI-built, TestFlight pending) |
+| Native iOS (SwiftUI) + Android (Compose) verifier apps: pick / photograph / share an image to recover against the live registry, same verify path, no mock data | wired + live (Android APK release; iOS on TestFlight) |
 | Embeddable verify badge: a one-line script that renders a live provenance seal on any third-party site | wired + live |
 | Act-based web UI: a bloomed galaxy hero, a live `/status` metrics ribbon, the in-browser strip-and-recover reveal, and a sticky scroll-spy nav over six acts | wired + live |
 | Append-only Merkle consistency proof, bound to the WORM B2 checkpoint (`sealedInObjectLock`, `sealedRootMatches`) | wired + live |
@@ -269,8 +269,8 @@ failures at p95 around 6 ms, so the live demo holds up under concurrent judges.
   for the WORM transparency seal.
 - **Watermark model**: a Modal service (`infra/modal`) carrying the real TrustMark model, so the API
   container stays torch-free; wired in via `ROOTED_WATERMARK_REMOTE_URL`.
-- **Mobile**: the Android app ships as a GitHub APK release; the iOS app is CI-built and goes to
-  TestFlight once the Apple Developer account is in place.
+- **Mobile**: the Android app ships as a GitHub APK release; the iOS app is distributed through
+  TestFlight (public link, Apple beta review cleared).
 
 A scheduled keepalive ping keeps the live app and database warm through the judging window.
 

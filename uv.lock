@@ -838,69 +838,69 @@ http = [
 
 [[package]]
 name = "genblaze"
-version = "0.4.1"
+version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "genblaze-core" },
     { name = "genblaze-s3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8e/cc/966a934f5d17d19cb54bbe122ceb19ef6d1d02928a59b1390fc0db48cb17/genblaze-0.4.1.tar.gz", hash = "sha256:01d1ea019224c55a79e49797cb657af1de60d1f354775e0452ce9d226a012797", size = 5156, upload-time = "2026-06-25T18:16:08.07Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/71/bc/4cb7c4ef6122edf170de0fcf9391acb4011d9b464c140ee11b7655ae8085/genblaze-0.4.3.tar.gz", hash = "sha256:14cc90e58728d8ac4a2d71875d58893910c007a0efc2c068cfb12afc7963afc2", size = 5187, upload-time = "2026-07-17T16:19:14.452Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/96/7d5f78fba9aae5524a30442f4c0c6e8abba5ff6856af01cad2672ffcaf35/genblaze-0.4.1-py3-none-any.whl", hash = "sha256:e6db44a0571da1792414bc7350e328c71fde5f67bd2b7b830bb55b0a5fd07362", size = 4076, upload-time = "2026-06-25T18:16:06.878Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/c1/bab917479eae54383ffd93cd0c23d7b62e729e4a1397d0d10fa7cffcdb13/genblaze-0.4.3-py3-none-any.whl", hash = "sha256:7e92255947a7d1244326f587e3bea733fb9b66d22b83f1f20d2ed68e00c955c0", size = 4082, upload-time = "2026-07-17T16:19:13.189Z" },
 ]
 
 [[package]]
 name = "genblaze-core"
-version = "0.3.4"
+version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/43/e6e012f1660c98fa25a630284b980b9fecdf71ec33401ad9bcbf9f970f86/genblaze_core-0.3.4.tar.gz", hash = "sha256:fb2be7ccdfaf9dad60954b8878f0a516221dce3b73c9e6d068a5ddee9ab42673", size = 384287, upload-time = "2026-06-25T17:52:51.201Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/2c/e5e52bc7201461515a1f904945f79e64676a30641e1b7f8f3881b873771a/genblaze_core-0.3.6.tar.gz", hash = "sha256:0b185da3df1e46daf9dcb29122a7db4f632033f3ee4b74ae41d13badd6a851e4", size = 434018, upload-time = "2026-07-17T16:17:59.404Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/3c/67a9b9051b819e7e0c23f0f70dac9a16af39a8f9ec06f88fa4b36fe3c6a9/genblaze_core-0.3.4-py3-none-any.whl", hash = "sha256:7b71fce2c9a7dbb135f37019b7e19c4bafa0441c551ddffced067118b7b03bc4", size = 258710, upload-time = "2026-06-25T17:52:49.65Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/62/2fc8bff49609078e65359ffa8152b55b9c044c44c54bb11604bcf9f5a52b/genblaze_core-0.3.6-py3-none-any.whl", hash = "sha256:aef6ae21d09dfa9b572a26b5bcec210c6523f96a132674fe53bc36215fe30b48", size = 281591, upload-time = "2026-07-17T16:17:58.126Z" },
 ]
 
 [[package]]
 name = "genblaze-gmicloud"
-version = "0.3.2"
+version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "genblaze-core" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/19/ef553925184907ef5df99685e7be3f8c63e68a916917bef1a813b7d8cd0e/genblaze_gmicloud-0.3.2.tar.gz", hash = "sha256:1b9e38870af2cccd218a68dab5938cd94114b958dd160e5d50fc2aa9652c2e44", size = 38921, upload-time = "2026-06-25T17:53:33.964Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/dc/b89ef849860f5847a42da8ab88a42c7a78b5c2ff088bc3bebca701601bc9/genblaze_gmicloud-0.3.3.tar.gz", hash = "sha256:0af5d750f7712e9cc4afb95ea11ac4b71c1aaf2d439c837c5364ecedccf5955f", size = 39876, upload-time = "2026-07-17T16:18:34.107Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/68/f73783d2c9ef3a8056d51200df7f988f5d1b9eb797f7776bda81719d37a9/genblaze_gmicloud-0.3.2-py3-none-any.whl", hash = "sha256:c977c5412de53c704be8182debfbfad04138248289571c90a8781135c9672e31", size = 32280, upload-time = "2026-06-25T17:53:32.634Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/2e/13460964b04bb6d8bf9c520de14e65386ae08bfbe8bd4cec4914a0a3a02f/genblaze_gmicloud-0.3.3-py3-none-any.whl", hash = "sha256:f4dc32550f75621433ce6c16e74f9169e183b3f8fc71800a9c7c957846ed0577", size = 33098, upload-time = "2026-07-17T16:18:32.888Z" },
 ]
 
 [[package]]
 name = "genblaze-openai"
-version = "0.3.1"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "genblaze-core" },
     { name = "openai" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/21/0d/be48578a2feb9e717a903d5acd8940b6bc8b5b90efab89cd504286d1051a/genblaze_openai-0.3.1.tar.gz", hash = "sha256:aa6062fa5b4b5cf2c2671a23df7979abcc950e8a54ebf5f10b55e6e544569750", size = 28746, upload-time = "2026-06-25T17:53:31.419Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/ab/e17ae61603ac7734176bb41d142e09e2b832004c8c39235b4bc2b9c22bab/genblaze_openai-0.3.2.tar.gz", hash = "sha256:8b90a09513f73553f405cc6c455fa2d90189632f6d1be74d45b3211cd900aaed", size = 30452, upload-time = "2026-07-17T16:18:36.228Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/16/ccea4f89f3db64307080f1c492802da2e1cbfa25f6f75704cf047f8f465f/genblaze_openai-0.3.1-py3-none-any.whl", hash = "sha256:fc105fb23f2ed4413c71426ffdc626dcb71266873f8f502e3b3ffaa8d57097b9", size = 24084, upload-time = "2026-06-25T17:53:30.19Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/43/9f2a17fb3968e3252448ef8c3c3a582672a53ef2d385531ccb4144db0d89/genblaze_openai-0.3.2-py3-none-any.whl", hash = "sha256:cdb87a6eb26134245f5d316ec56716c86109430813d405ac826a6618bb5d18ab", size = 24750, upload-time = "2026-07-17T16:18:34.932Z" },
 ]
 
 [[package]]
 name = "genblaze-s3"
-version = "0.3.4"
+version = "0.3.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "genblaze-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/b0/e2cde56a396ee1d5a1a01e4388e20b25dffaaeb4df87afac74be9d9b6109/genblaze_s3-0.3.4.tar.gz", hash = "sha256:440fe4ae0d190f8334c21ba88fab502d41ddc764cf1cba6bdc94d676f7e9338d", size = 75288, upload-time = "2026-06-25T17:53:29.188Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/20/592741a5c2d6b4c594f5abe93e09efbd7fcc5bde000cca1ca9f2975560a1/genblaze_s3-0.3.5.tar.gz", hash = "sha256:26bbd4f52fe8ec9a474ac3b29623654f711528191ffa9abadb33525f0e7a0909", size = 75311, upload-time = "2026-07-17T16:18:33.695Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/28/6ac0a1ec4d123ff60d1bbf36496351b25ee48ad11bb605b68b01cec8559e/genblaze_s3-0.3.4-py3-none-any.whl", hash = "sha256:54d6fa8399bec66d2d7a277bdd89dcc768b970c74787462d5e3e76d35177271c", size = 43434, upload-time = "2026-06-25T17:53:27.83Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/ee/4a7d0f645aeacdec049c31a9930bf93f529fd32315a43967ceb328eceab3/genblaze_s3-0.3.5-py3-none-any.whl", hash = "sha256:d74a4536ccf6a73fd7630da1ab819bd9b23514df1b890cbbb83c6aec5c3d2887", size = 43435, upload-time = "2026-07-17T16:18:32.354Z" },
 ]
 
 [[package]]
@@ -2769,7 +2769,7 @@ genblaze = [
 
 [package.metadata]
 requires-dist = [
-    { name = "genblaze", marker = "extra == 'genblaze'", specifier = ">=0.3" },
+    { name = "genblaze", marker = "extra == 'genblaze'", specifier = ">=0.4.3" },
     { name = "genblaze-gmicloud", marker = "extra == 'genblaze'", specifier = ">=0.3" },
     { name = "genblaze-openai", marker = "extra == 'genblaze'", specifier = ">=0.3" },
     { name = "httpx", marker = "extra == 'genblaze'", specifier = ">=0.27" },

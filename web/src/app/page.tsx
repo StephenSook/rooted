@@ -9,6 +9,7 @@ import { ConsistencyPanel } from "@/components/consistency-panel";
 import { ContentCredentials } from "@/components/content-credentials";
 import { FederationPanel } from "@/components/federation-panel";
 import { GenblazePanel } from "@/components/genblaze-panel";
+import { GenblazeVerifyPanel } from "@/components/genblaze-verify-panel";
 import { GeneratePanel } from "@/components/generate-panel";
 import { Hero } from "@/components/hero";
 import { IntegrityClashPanel } from "@/components/integrity-clash-panel";
@@ -150,6 +151,9 @@ export default function Home() {
         </WhenVisible>
         <WhenVisible>
           <GenblazePanel />
+        </WhenVisible>
+        <WhenVisible>
+          <GenblazeVerifyPanel />
         </WhenVisible>
       </section>
 

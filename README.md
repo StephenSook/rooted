@@ -143,6 +143,7 @@ suite, never from draft prose.
 | Real Genblaze generation (GMICloud primary, OpenAI fallback) | wired + demonstrated: the live demo recovers a real GMICloud generation |
 | Genblaze AssemblyAI speech-to-text: a real speech clip to a hash-verified transcript, reconciled live with Rooted's signature (the run was persisted to B2; its object keys are recorded) | wired + live |
 | Genblaze wrote its own run to B2 via its `ObjectStorageSink` (a prior run); the endpoint reconciles the integrity hash + Rooted's signature live | wired + live |
+| Genblaze v0.6.0 byte-level output verification (`genblaze verify --fetch`): the asset is fetched from Backblaze B2 with a presigned GET and its bytes re-hashed against the manifest's committed sha256, on top of genblaze-core's Mode 1 manifest verification | wired + live (`/demo/genblaze-verify`, `byteSource: b2`) |
 | Multi-provider recovery (Nano Banana 2 / Flux 2 Pro / Qwen via kie.ai), vendor-neutral | wired + live |
 | TrustMark variant P watermark + PDQ fallback; the real embed/decode runs live via a dedicated Modal model service, so the ReMark watermark-removal failover shows a real decode defeated while PDQ still recovers | wired + live |
 | Audio + video modalities (spectral audio fingerprint, per-keyframe video PDQ) | wired + live |

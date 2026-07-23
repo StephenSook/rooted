@@ -35,6 +35,7 @@ from rooted_api.checkpoint import seal_startup_checkpoint
 from rooted_api.demo import router as demo_router
 from rooted_api.demo import seed_audio_demo, seed_demo, seed_providers, seed_video_demo
 from rooted_api.genblaze import router as genblaze_router
+from rooted_api.genblaze_verify import router as genblaze_verify_router
 from rooted_api.generate import router as generate_router
 from rooted_api.limits import LimitRequestBodyMiddleware
 from rooted_api.lineage import router as lineage_router
@@ -120,6 +121,7 @@ def create_app(*, mount_mcp: bool = True) -> FastAPI:
     app.include_router(lineage_router)
     app.include_router(checkpoint_router)
     app.include_router(genblaze_router)
+    app.include_router(genblaze_verify_router)
     app.include_router(tamper_router)
     app.include_router(transcript_router)
     app.include_router(b2_events_router)

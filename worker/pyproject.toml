@@ -13,9 +13,15 @@ dependencies = [
 # Genblaze pulls provider SDKs; kept optional. The pipeline is tested with a fake generator, and
 # GenblazeGenerator imports genblaze lazily so the worker installs and CI run without these.
 genblaze = [
-    "genblaze>=0.4.3",
-    "genblaze-gmicloud>=0.3",
-    "genblaze-openai>=0.3",
+    # v0.6.0 train (PyPI 2026-07-22). The umbrella floor pulls genblaze-core>=0.3.7 and
+    # genblaze-s3>=0.3.6 transitively; s3 0.3.6 carries the B2 sink fix (a run that already stored
+    # its assets no longer fails when a daily Class B cap or a restricted key makes HeadObject
+    # return 403), and every package now caps third-party deps below their next major. The
+    # Pipeline.step named-params surface (model/prompt/modality/fallback_models) is unchanged, so
+    # generator.py needs no migration.
+    "genblaze>=0.4.4",
+    "genblaze-gmicloud>=0.3.4",
+    "genblaze-openai>=0.3.3",
     "httpx>=0.27",
 ]
 
